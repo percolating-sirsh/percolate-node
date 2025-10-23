@@ -1,0 +1,62 @@
+[package]
+name = "percolate-rust"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.75"
+authors = ["Percolation Labs"]
+description = "Shared Rust components for Percolate - used by both percolate and percolate-reading"
+license = "TBD"
+repository = "https://github.com/percolation-labs/percolate"
+
+[lib]
+name = "percolate_rust"
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+# Python bindings
+pyo3 = { version = "0.22", features = ["extension-module"] }
+
+# Database
+rocksdb = { version = "0.22", default-features = false, features = ["snappy"] }
+
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# Async runtime
+tokio = { version = "1.42", features = ["full"] }
+
+# Error handling
+thiserror = "2.0"
+anyhow = "1.0"
+
+# Utilities
+uuid = { version = "1.11", features = ["v4", "serde"] }
+chrono = { version = "0.4", features = ["serde"] }
+regex = "1.11"
+
+# Cryptography
+ed25519-dalek = "2.1"
+chacha20poly1305 = "0.10"
+sha2 = "0.10"
+hkdf = "0.12"
+
+# Logging
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+[dev-dependencies]
+criterion = "0.5"
+proptest = "1.5"
+tempfile = "3.14"
+tokio-test = "0.4"
+
+[[bench]]
+name = "memory_bench"
+harness = false
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+strip = true

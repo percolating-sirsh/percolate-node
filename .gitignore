@@ -1,0 +1,54 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv/
+venv/
+ENV/
+env/
+.pytest_cache/
+.coverage
+htmlcov/
+*.egg-info/
+dist/
+build/
+
+# Rust
+target/
+Cargo.lock
+**/*.rs.bk
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Data
+data/
+*.db
+*.rocksdb/
+
+# Secrets
+.env
+.env.local
+*.pem
+*.key
+secrets/
+
+# Logs
+*.log
+logs/
+
+# Spikes (experimental code - allowed but tracked separately)
+# Note: .spikes/ READMEs and manifests are committed
+# Note: Spike code is allowed - it's experimental/prototype code
+.spikes/*/data/
+.spikes/*/.venv/
+.spikes/*/target/
+.spikes/*/__pycache__/
+.spikes/archived/  # Don't commit archived spikes

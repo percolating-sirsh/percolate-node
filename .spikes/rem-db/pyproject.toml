@@ -1,0 +1,36 @@
+[project]
+name = "rem-db"
+version = "0.1.0"
+description = "REM Database Spike - RocksDB + Vectors + Predicates"
+authors = [
+    { name = "mr-saoirse", email = "amartey@gmail.com" }
+]
+requires-python = ">=3.12"
+dependencies = [
+    "rocksdict>=0.3.0",  # Rust-based RocksDB bindings (easier install than python-rocksdb)
+    "hnswlib>=0.8.0",
+    "numpy>=1.26.0",
+    "pydantic>=2.0.0",
+    "orjson>=3.9.0",  # Fast JSON serialization
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-benchmark>=4.0.0",
+    "sentence-transformers>=2.0.0",  # For testing embeddings
+    "ipython>=8.0.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_functions = ["test_*"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
