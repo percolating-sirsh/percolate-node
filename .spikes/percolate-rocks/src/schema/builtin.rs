@@ -52,7 +52,16 @@ use serde_json::json;
 /// assert!(registry.has("resources"));
 /// ```
 pub fn register_builtin_schemas(registry: &mut SchemaRegistry) -> Result<()> {
-    todo!("Implement register_builtin_schemas")
+    // Register schemas table
+    registry.register("schemas", schemas_table_schema())?;
+
+    // Register documents table
+    registry.register("documents", documents_table_schema())?;
+
+    // Register resources table
+    registry.register("resources", resources_table_schema())?;
+
+    Ok(())
 }
 
 /// Get schemas table schema definition.
