@@ -80,7 +80,18 @@ impl Entity {
     ///
     /// New `Entity` with timestamps set to current time
     pub fn new(id: Uuid, entity_type: String, properties: serde_json::Value) -> Self {
-        todo!("Implement Entity::new")
+        let now = chrono::Utc::now().to_rfc3339();
+        Self {
+            system: SystemFields {
+                id,
+                entity_type,
+                created_at: now.clone(),
+                modified_at: now,
+                deleted_at: None,
+                edges: vec![],
+            },
+            properties,
+        }
     }
 
     /// Get embedding vector if present in properties.
@@ -88,8 +99,15 @@ impl Entity {
     /// # Returns
     ///
     /// `Some(&[f32])` if embedding field exists, `None` otherwise
-    pub fn get_embedding(&self) -> Option<&[f32]> {
-        todo!("Implement Entity::get_embedding")
+    pub fn get_embedding(&self) -> Option<Vec<f32>> {
+        self.properties
+            .get("embedding")
+            .and_then(|v| v.as_array())
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|v| v.as_f64().map(|f| f as f32))
+                    .collect()
+            })
     }
 
     /// Get alternative embedding vector if present.
@@ -97,15 +115,23 @@ impl Entity {
     /// # Returns
     ///
     /// `Some(&[f32])` if embedding_alt field exists, `None` otherwise
-    pub fn get_alt_embedding(&self) -> Option<&[f32]> {
-        todo!("Implement Entity::get_alt_embedding")
+    pub fn get_alt_embedding(&self) -> Option<Vec<f32>> {
+        self.properties
+            .get("embedding_alt")
+            .and_then(|v| v.as_array())
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|v| v.as_f64().map(|f| f as f32))
+                    .collect()
+            })
     }
 
     /// Mark entity as deleted (soft delete).
     ///
     /// Sets `deleted_at` timestamp to current time.
     pub fn mark_deleted(&mut self) {
-        todo!("Implement Entity::mark_deleted")
+        self.system.deleted_at = Some(chrono::Utc::now().to_rfc3339());
+        self.system.modified_at = chrono::Utc::now().to_rfc3339();
     }
 
     /// Check if entity is soft deleted.
@@ -114,7 +140,7 @@ impl Entity {
     ///
     /// `true` if `deleted_at` is not null
     pub fn is_deleted(&self) -> bool {
-        todo!("Implement Entity::is_deleted")
+        self.system.deleted_at.is_some()
     }
 }
 
@@ -164,7 +190,15 @@ impl Edge {
     ///
     /// New `Edge` with timestamp initialized
     pub fn new(src: Uuid, dst: Uuid, rel_type: String) -> Self {
-        todo!("Implement Edge::new")
+        Self {
+            src,
+            dst,
+            rel_type,
+            data: EdgeData {
+                properties: HashMap::new(),
+                created_at: chrono::Utc::now().to_rfc3339(),
+            },
+        }
     }
 
     /// Add property to edge.
@@ -174,26 +208,125 @@ impl Edge {
     /// * `key` - Property name
     /// * `value` - Property value
     pub fn add_property(&mut self, key: String, value: serde_json::Value) {
-        todo!("Implement Edge::add_property")
+        self.data.properties.insert(key, value);
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::json;
 
     #[test]
     fn test_entity_creation() {
-        // TODO: Test entity creation with system fields
+        let id = Uuid::new_v4();
+        let properties = json!({
+            "title": "Test Article",
+            "content": "Test content"
+        });
+
+        let entity = Entity::new(id, "articles".to_string(), properties.clone());
+
+        assert_eq!(entity.system.id, id);
+        assert_eq!(entity.system.entity_type, "articles");
+        assert_eq!(entity.properties, properties);
+        assert!(entity.system.deleted_at.is_none());
+        assert_eq!(entity.system.edges.len(), 0);
+        assert!(!entity.system.created_at.is_empty());
+        assert!(!entity.system.modified_at.is_empty());
+    }
+
+    #[test]
+    fn test_entity_serialization() {
+        let id = Uuid::new_v4();
+        let entity = Entity::new(
+            id,
+            "articles".to_string(),
+            json!({"title": "Test"}),
+        );
+
+        let serialized = serde_json::to_string(&entity).unwrap();
+        let deserialized: Entity = serde_json::from_str(&serialized).unwrap();
+
+        assert_eq!(deserialized.system.id, id);
+        assert_eq!(deserialized.system.entity_type, "articles");
     }
 
     #[test]
     fn test_entity_soft_delete() {
-        // TODO: Test soft delete marking
+        let mut entity = Entity::new(
+            Uuid::new_v4(),
+            "articles".to_string(),
+            json!({"title": "Test"}),
+        );
+
+        assert!(!entity.is_deleted());
+
+        entity.mark_deleted();
+
+        assert!(entity.is_deleted());
+        assert!(entity.system.deleted_at.is_some());
+    }
+
+    #[test]
+    fn test_entity_embeddings() {
+        let entity = Entity::new(
+            Uuid::new_v4(),
+            "articles".to_string(),
+            json!({
+                "title": "Test",
+                "embedding": [0.1, 0.5, -0.2],
+                "embedding_alt": [0.2, 0.6, -0.3]
+            }),
+        );
+
+        let embedding = entity.get_embedding().unwrap();
+        assert_eq!(embedding.len(), 3);
+        assert_eq!(embedding[0], 0.1);
+
+        let alt_embedding = entity.get_alt_embedding().unwrap();
+        assert_eq!(alt_embedding.len(), 3);
+        assert_eq!(alt_embedding[0], 0.2);
+    }
+
+    #[test]
+    fn test_entity_no_embeddings() {
+        let entity = Entity::new(
+            Uuid::new_v4(),
+            "articles".to_string(),
+            json!({"title": "Test"}),
+        );
+
+        assert!(entity.get_embedding().is_none());
+        assert!(entity.get_alt_embedding().is_none());
     }
 
     #[test]
     fn test_edge_creation() {
-        // TODO: Test edge creation
+        let src = Uuid::new_v4();
+        let dst = Uuid::new_v4();
+
+        let edge = Edge::new(src, dst, "authored".to_string());
+
+        assert_eq!(edge.src, src);
+        assert_eq!(edge.dst, dst);
+        assert_eq!(edge.rel_type, "authored");
+        assert!(!edge.data.created_at.is_empty());
+        assert_eq!(edge.data.properties.len(), 0);
+    }
+
+    #[test]
+    fn test_edge_properties() {
+        let mut edge = Edge::new(
+            Uuid::new_v4(),
+            Uuid::new_v4(),
+            "references".to_string(),
+        );
+
+        edge.add_property("weight".to_string(), json!(0.8));
+        edge.add_property("context".to_string(), json!("citation"));
+
+        assert_eq!(edge.data.properties.len(), 2);
+        assert_eq!(edge.data.properties.get("weight").unwrap(), &json!(0.8));
     }
 }
