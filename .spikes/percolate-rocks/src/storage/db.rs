@@ -138,10 +138,23 @@ impl Storage {
     /// # Panics
     ///
     /// Panics if column family doesn't exist (programming error)
-    fn cf_handle(&self, name: &str) -> Arc<rocksdb::BoundColumnFamily> {
+    pub fn cf_handle(&self, name: &str) -> Arc<rocksdb::BoundColumnFamily> {
         self.db
             .cf_handle(name)
             .unwrap_or_else(|| panic!("Column family '{}' not found", name))
+    }
+
+    /// Get underlying RocksDB instance.
+    ///
+    /// # Returns
+    ///
+    /// Arc reference to DB
+    ///
+    /// # Note
+    ///
+    /// Used for advanced operations like custom iterators.
+    pub fn db(&self) -> &Arc<DB> {
+        &self.db
     }
 
     /// Flush all memtables to disk.

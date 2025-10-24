@@ -38,7 +38,7 @@ impl Database {
     /// ```
     pub fn open<P: AsRef<Path>>(path: P) -> Result<Self> {
         // Open storage layer
-        let storage = Storage::open(path)?;
+        let storage = Arc::new(Storage::open(path)?);
 
         // Initialize schema registry
         let mut registry = SchemaRegistry::new();
@@ -46,10 +46,15 @@ impl Database {
         // Register builtin schemas (schemas, documents, resources)
         register_builtin_schemas(&mut registry)?;
 
-        Ok(Self {
-            storage: Arc::new(storage),
+        let db = Self {
+            storage,
             registry: Arc::new(RwLock::new(registry)),
-        })
+        };
+
+        // Load persisted schemas from storage
+        db.load_schemas_from_storage()?;
+
+        Ok(db)
     }
 
     /// Open database in memory for testing.
@@ -80,10 +85,24 @@ impl Database {
     ///
     /// Returns `DatabaseError::ValidationError` if schema is invalid
     pub fn register_schema(&self, name: &str, schema: serde_json::Value) -> Result<()> {
-        let mut registry = self.registry.write()
-            .map_err(|e| crate::types::DatabaseError::InternalError(format!("Lock error: {}", e)))?;
+        // Register in memory
+        {
+            let mut registry = self.registry.write()
+                .map_err(|e| crate::types::DatabaseError::InternalError(format!("Lock error: {}", e)))?;
 
-        registry.register(name, schema)
+            registry.register(name, schema.clone())?;
+        }
+
+        // Persist to storage (unless it's a system schema)
+        use crate::schema::PydanticSchemaParser;
+        use crate::schema::SchemaCategory;
+
+        let category = PydanticSchemaParser::extract_category(&schema);
+        if category != SchemaCategory::System {
+            self.persist_schema(name, &schema)?;
+        }
+
+        Ok(())
     }
 
     /// Get schema by name.
@@ -153,7 +172,7 @@ impl Database {
         Arc::clone(&self.registry)
     }
 
-    /// Insert entity (placeholder - needs validation and embedding).
+    /// Insert entity with schema validation and deterministic UUID.
     ///
     /// # Arguments
     ///
@@ -163,33 +182,41 @@ impl Database {
     ///
     /// # Returns
     ///
-    /// Entity UUID
+    /// Entity UUID (deterministic if key field present)
     ///
     /// # Errors
     ///
     /// Returns error if schema not found or validation fails
     ///
-    /// # TODO
+    /// # Features
     ///
-    /// - Validate against schema
-    /// - Generate deterministic UUID based on key_field
-    /// - Generate embeddings if configured
-    /// - Create indexes if configured
+    /// - ✅ Schema validation (JSON Schema)
+    /// - ✅ Deterministic UUID generation (based on key_field)
+    /// - ⏳ Embedding generation (TODO)
+    /// - ⏳ Index creation (TODO)
+    /// - ⏳ Key index update (TODO)
     pub fn insert(&self, tenant_id: &str, table: &str, data: serde_json::Value) -> Result<uuid::Uuid> {
-        use crate::types::DatabaseError;
+        use crate::types::{DatabaseError, generate_uuid};
+        use crate::schema::{SchemaValidator, PydanticSchemaParser};
 
-        // Check schema exists
-        if !self.has_schema(table) {
-            return Err(DatabaseError::SchemaNotFound(table.to_string()));
-        }
+        // Get schema
+        let registry = self.registry.read()
+            .map_err(|e| DatabaseError::InternalError(format!("Lock error: {}", e)))?;
 
-        // TODO: Schema validation
-        // TODO: Deterministic UUID generation
-        // TODO: Embedding generation
-        // TODO: Index creation
+        let schema = registry.get(table)?;
 
-        // For now: just create entity and store
-        let id = uuid::Uuid::new_v4();
+        // Validate data against schema
+        let validator = SchemaValidator::new(schema.clone())?;
+        validator.validate(&data)?;
+
+        // Extract key_field from schema
+        let key_field_opt = PydanticSchemaParser::extract_key_field(schema);
+        let key_field = key_field_opt.as_deref();
+
+        // Generate deterministic UUID
+        let id = generate_uuid(table, &data, key_field);
+
+        // Create entity with system fields
         let entity = Entity::new(id, table.to_string(), data);
 
         // Serialize and store
@@ -201,6 +228,10 @@ impl Database {
             &key,
             &value,
         )?;
+
+        // TODO: Update key index for reverse lookups
+        // TODO: Generate embeddings if configured
+        // TODO: Create field indexes if configured
 
         Ok(id)
     }
@@ -227,6 +258,130 @@ impl Database {
             Some(data) => Ok(Some(serde_json::from_slice(&data)?)),
             None => Ok(None),
         }
+    }
+
+    /// Load persisted schemas from storage.
+    ///
+    /// # Returns
+    ///
+    /// Ok if schemas loaded successfully
+    ///
+    /// # Errors
+    ///
+    /// Returns error if schema loading fails
+    ///
+    /// # Note
+    ///
+    /// This is called automatically when opening the database.
+    /// System schemas are not loaded (already registered in-memory).
+    fn load_schemas_from_storage(&self) -> Result<()> {
+        use rocksdb::IteratorMode;
+
+        // Get column family handle
+        let cf = self.storage.cf_handle(crate::storage::column_families::CF_ENTITIES);
+
+        // Iterate over all entities with prefix "entity:default:"
+        let prefix = b"entity:default:";
+        let iter = self.storage.db().iterator_cf(
+            &cf,
+            IteratorMode::From(prefix, rocksdb::Direction::Forward),
+        );
+
+        for item in iter {
+            let (key, value) = item.map_err(|e| crate::types::DatabaseError::StorageError(e))?;
+
+            // Check if key still matches prefix
+            if !key.starts_with(prefix) {
+                break;
+            }
+
+            // Deserialize entity
+            let entity: Entity = serde_json::from_slice(&value)?;
+
+            // Only load schema entities (not other types)
+            if entity.system.entity_type != "schemas" {
+                continue;
+            }
+
+            // Extract schema data
+            let props = &entity.properties;
+            let short_name = props.get("short_name")
+                .and_then(|v| v.as_str())
+                .ok_or_else(|| crate::types::DatabaseError::ValidationError(
+                    "Schema entity missing 'short_name'".into()
+                ))?;
+
+            let schema = props.get("schema")
+                .ok_or_else(|| crate::types::DatabaseError::ValidationError(
+                    "Schema entity missing 'schema' field".into()
+                ))?;
+
+            // Register in memory (skip persistence since it's already persisted)
+            let mut registry = self.registry.write()
+                .map_err(|e| crate::types::DatabaseError::InternalError(format!("Lock error: {}", e)))?;
+
+            registry.register(short_name, schema.clone())?;
+        }
+
+        Ok(())
+    }
+
+    /// Persist schema to storage (schemas table).
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - Schema name
+    /// * `schema` - JSON Schema
+    ///
+    /// # Returns
+    ///
+    /// Ok if schema persisted successfully
+    ///
+    /// # Errors
+    ///
+    /// Returns error if persistence fails
+    fn persist_schema(&self, name: &str, schema: &serde_json::Value) -> Result<()> {
+        use crate::schema::PydanticSchemaParser;
+        use crate::types::generate_uuid;
+
+        // Extract schema metadata
+        let version = PydanticSchemaParser::extract_version(schema)
+            .ok_or_else(|| crate::types::DatabaseError::ValidationError(
+                "Schema missing 'version' field".into()
+            ))?;
+
+        let description = PydanticSchemaParser::extract_description(schema)
+            .unwrap_or_else(|| "No description".to_string());
+
+        let category = PydanticSchemaParser::extract_category(schema);
+
+        // Create schema entity
+        let schema_data = serde_json::json!({
+            "short_name": name,
+            "name": PydanticSchemaParser::extract_fqn(schema).unwrap_or_else(|| name.to_string()),
+            "version": version,
+            "schema": schema,
+            "description": description,
+            "category": category.as_str(),
+        });
+
+        // Generate deterministic UUID (using "name" field)
+        let id = generate_uuid("schemas", &schema_data, Some("name"));
+
+        // Create entity
+        let entity = Entity::new(id, "schemas".to_string(), schema_data);
+
+        // Serialize and store
+        let key = crate::storage::keys::encode_entity_key("default", id);
+        let value = serde_json::to_vec(&entity)?;
+
+        self.storage.put(
+            crate::storage::column_families::CF_ENTITIES,
+            &key,
+            &value,
+        )?;
+
+        Ok(())
     }
 }
 
