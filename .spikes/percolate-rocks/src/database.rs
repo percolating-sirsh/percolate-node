@@ -270,6 +270,192 @@ impl Database {
         }
     }
 
+    /// Update entity properties.
+    ///
+    /// # Arguments
+    ///
+    /// * `tenant_id` - Tenant identifier
+    /// * `entity_id` - Entity UUID to update
+    /// * `updates` - JSON object with fields to update (partial or full)
+    ///
+    /// # Returns
+    ///
+    /// Updated entity
+    ///
+    /// # Errors
+    ///
+    /// Returns error if entity not found or validation fails
+    ///
+    /// # Features
+    ///
+    /// - ✅ Partial updates (merge with existing properties)
+    /// - ✅ Schema validation on updated entity
+    /// - ✅ Updates modified_at timestamp
+    /// - ⏳ Re-generate embeddings if embedding fields changed (TODO)
+    /// - ⏳ Update field indexes if indexed fields changed (TODO)
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// // Update single field
+    /// db.update("tenant1", entity_id, json!({"age": 31}))?;
+    ///
+    /// // Update multiple fields
+    /// db.update("tenant1", entity_id, json!({"age": 31, "status": "active"}))?;
+    /// ```
+    pub fn update(&self, tenant_id: &str, entity_id: uuid::Uuid, updates: serde_json::Value) -> Result<Entity> {
+        use crate::types::DatabaseError;
+        use crate::schema::SchemaValidator;
+
+        // Get existing entity
+        let mut entity = self.get(tenant_id, entity_id)?
+            .ok_or_else(|| DatabaseError::EntityNotFound(entity_id))?;
+
+        // Merge updates into properties
+        if let Some(updates_obj) = updates.as_object() {
+            if let Some(props_obj) = entity.properties.as_object_mut() {
+                for (key, value) in updates_obj {
+                    props_obj.insert(key.clone(), value.clone());
+                }
+            }
+        } else {
+            // Full replacement if updates is not an object
+            entity.properties = updates;
+        }
+
+        // Validate updated entity against schema
+        let registry = self.registry.read()
+            .map_err(|e| DatabaseError::InternalError(format!("Lock error: {}", e)))?;
+
+        let schema = registry.get(&entity.system.entity_type)?;
+        let validator = SchemaValidator::new(schema.clone())?;
+        validator.validate(&entity.properties)?;
+
+        // Update modified_at timestamp
+        entity.system.modified_at = chrono::Utc::now().to_rfc3339();
+
+        // Serialize and store
+        let key = crate::storage::keys::encode_entity_key(tenant_id, entity_id);
+        let value = serde_json::to_vec(&entity)?;
+
+        self.storage.put(
+            crate::storage::column_families::CF_ENTITIES,
+            &key,
+            &value,
+        )?;
+
+        // TODO: Re-generate embeddings if embedding fields changed
+        // TODO: Update field indexes if indexed fields changed
+
+        Ok(entity)
+    }
+
+    /// Delete entity (soft delete by default).
+    ///
+    /// # Arguments
+    ///
+    /// * `tenant_id` - Tenant identifier
+    /// * `entity_id` - Entity UUID to delete
+    ///
+    /// # Returns
+    ///
+    /// Deleted entity (with deleted_at set)
+    ///
+    /// # Errors
+    ///
+    /// Returns error if entity not found
+    ///
+    /// # Note
+    ///
+    /// This is a soft delete - sets `deleted_at` timestamp but keeps the entity in storage.
+    /// For hard delete (permanent removal), use `hard_delete()`.
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// let deleted = db.delete("tenant1", entity_id)?;
+    /// assert!(deleted.is_deleted());
+    /// ```
+    pub fn delete(&self, tenant_id: &str, entity_id: uuid::Uuid) -> Result<Entity> {
+        use crate::types::DatabaseError;
+
+        // Get existing entity
+        let mut entity = self.get(tenant_id, entity_id)?
+            .ok_or_else(|| DatabaseError::EntityNotFound(entity_id))?;
+
+        // Mark as deleted
+        entity.mark_deleted();
+
+        // Serialize and store
+        let key = crate::storage::keys::encode_entity_key(tenant_id, entity_id);
+        let value = serde_json::to_vec(&entity)?;
+
+        self.storage.put(
+            crate::storage::column_families::CF_ENTITIES,
+            &key,
+            &value,
+        )?;
+
+        Ok(entity)
+    }
+
+    /// Hard delete entity (permanent removal).
+    ///
+    /// # Arguments
+    ///
+    /// * `tenant_id` - Tenant identifier
+    /// * `entity_id` - Entity UUID to delete
+    ///
+    /// # Returns
+    ///
+    /// Ok if deletion successful
+    ///
+    /// # Errors
+    ///
+    /// Returns error if entity not found
+    ///
+    /// # Warning
+    ///
+    /// This is a permanent delete - the entity cannot be recovered.
+    /// Consider using `delete()` (soft delete) instead.
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// db.hard_delete("tenant1", entity_id)?;
+    /// assert!(db.get("tenant1", entity_id)?.is_none());
+    /// ```
+    pub fn hard_delete(&self, tenant_id: &str, entity_id: uuid::Uuid) -> Result<()> {
+        use crate::types::DatabaseError;
+
+        // Verify entity exists
+        let entity = self.get(tenant_id, entity_id)?
+            .ok_or_else(|| DatabaseError::EntityNotFound(entity_id))?;
+
+        // Delete from entities CF
+        let key = crate::storage::keys::encode_entity_key(tenant_id, entity_id);
+        self.storage.delete(crate::storage::column_families::CF_ENTITIES, &key)?;
+
+        // Delete from key index if entity has a key value
+        let registry = self.registry.read()
+            .map_err(|e| DatabaseError::InternalError(format!("Lock error: {}", e)))?;
+
+        let schema = registry.get(&entity.system.entity_type)?;
+        let key_field_opt = crate::schema::PydanticSchemaParser::extract_key_field(schema);
+        let key_field = key_field_opt.as_deref();
+
+        if let Some(key_value) = extract_key_value(&entity.properties, key_field) {
+            let index_key = crate::storage::keys::encode_key_index(tenant_id, &key_value, entity_id);
+            self.storage.delete(crate::storage::column_families::CF_KEY_INDEX, &index_key)?;
+        }
+
+        // TODO: Delete embeddings from CF_EMBEDDINGS
+        // TODO: Delete field indexes from CF_INDEXES
+        // TODO: Delete edges from CF_EDGES and CF_EDGES_REVERSE
+
+        Ok(())
+    }
+
     /// Get entity by key field value (reverse lookup).
     ///
     /// # Arguments
@@ -680,5 +866,175 @@ mod tests {
 
         assert!(from_tenant1.is_some());
         assert!(from_tenant2.is_some()); // Both exist because same UUID stored under different tenant keys
+    }
+
+    #[test]
+    fn test_update_partial() {
+        let db = Database::open_temp().unwrap();
+
+        // Register schema
+        let schema = serde_json::json!({
+            "title": "Person",
+            "version": "1.0.0",
+            "short_name": "person",
+            "properties": {
+                "name": {"type": "string"},
+                "age": {"type": "number"},
+                "status": {"type": "string"}
+            },
+            "required": ["name"]
+        });
+
+        db.register_schema("person", schema).unwrap();
+
+        // Insert entity
+        let data = serde_json::json!({"name": "Alice", "age": 30, "status": "active"});
+        let id = db.insert("tenant1", "person", data).unwrap();
+
+        // Partial update - only update age
+        let updates = serde_json::json!({"age": 31});
+        let updated = db.update("tenant1", id, updates).unwrap();
+
+        assert_eq!(updated.properties.get("name").unwrap(), "Alice");
+        assert_eq!(updated.properties.get("age").unwrap(), 31);
+        assert_eq!(updated.properties.get("status").unwrap(), "active");
+    }
+
+    #[test]
+    fn test_update_validation() {
+        let db = Database::open_temp().unwrap();
+
+        // Register schema with required field
+        let schema = serde_json::json!({
+            "title": "Person",
+            "version": "1.0.0",
+            "short_name": "person",
+            "properties": {
+                "name": {"type": "string"},
+                "age": {"type": "number"}
+            },
+            "required": ["name", "age"]
+        });
+
+        db.register_schema("person", schema).unwrap();
+
+        // Insert valid entity
+        let data = serde_json::json!({"name": "Alice", "age": 30});
+        let id = db.insert("tenant1", "person", data).unwrap();
+
+        // Try to update with invalid data (age as string)
+        let updates = serde_json::json!({"age": "thirty"});
+        let result = db.update("tenant1", id, updates);
+
+        assert!(result.is_err()); // Should fail validation
+    }
+
+    #[test]
+    fn test_update_not_found() {
+        let db = Database::open_temp().unwrap();
+
+        let updates = serde_json::json!({"age": 31});
+        let result = db.update("tenant1", uuid::Uuid::new_v4(), updates);
+
+        assert!(result.is_err()); // Entity not found
+    }
+
+    #[test]
+    fn test_soft_delete() {
+        let db = Database::open_temp().unwrap();
+
+        // Register schema
+        let schema = serde_json::json!({
+            "title": "Person",
+            "version": "1.0.0",
+            "short_name": "person",
+            "properties": {
+                "name": {"type": "string"}
+            },
+            "required": ["name"]
+        });
+
+        db.register_schema("person", schema).unwrap();
+
+        // Insert entity
+        let data = serde_json::json!({"name": "Alice"});
+        let id = db.insert("tenant1", "person", data).unwrap();
+
+        // Soft delete
+        let deleted = db.delete("tenant1", id).unwrap();
+
+        assert!(deleted.is_deleted());
+        assert!(deleted.system.deleted_at.is_some());
+
+        // Entity still exists in storage (soft deleted)
+        let entity = db.get("tenant1", id).unwrap();
+        assert!(entity.is_some());
+        assert!(entity.unwrap().is_deleted());
+    }
+
+    #[test]
+    fn test_hard_delete() {
+        let db = Database::open_temp().unwrap();
+
+        // Register schema
+        let schema = serde_json::json!({
+            "title": "Person",
+            "version": "1.0.0",
+            "short_name": "person",
+            "properties": {
+                "name": {"type": "string"}
+            },
+            "required": ["name"]
+        });
+
+        db.register_schema("person", schema).unwrap();
+
+        // Insert entity
+        let data = serde_json::json!({"name": "Alice"});
+        let id = db.insert("tenant1", "person", data).unwrap();
+
+        // Hard delete
+        db.hard_delete("tenant1", id).unwrap();
+
+        // Entity no longer exists
+        let entity = db.get("tenant1", id).unwrap();
+        assert!(entity.is_none());
+    }
+
+    #[test]
+    fn test_hard_delete_removes_key_index() {
+        let db = Database::open_temp().unwrap();
+
+        // Register schema with key_field
+        let schema = serde_json::json!({
+            "title": "User",
+            "version": "1.0.0",
+            "short_name": "user",
+            "json_schema_extra": {
+                "key_field": "email"
+            },
+            "properties": {
+                "email": {"type": "string"},
+                "name": {"type": "string"}
+            },
+            "required": ["email", "name"]
+        });
+
+        db.register_schema("user", schema).unwrap();
+
+        // Insert entity
+        let data = serde_json::json!({"email": "alice@example.com", "name": "Alice"});
+        let id = db.insert("tenant1", "user", data).unwrap();
+
+        // Verify key lookup works
+        let entity = db.get_by_key("tenant1", "user", "alice@example.com").unwrap();
+        assert!(entity.is_some());
+
+        // Hard delete
+        db.hard_delete("tenant1", id).unwrap();
+
+        // Key lookup should return None
+        let entity = db.get_by_key("tenant1", "user", "alice@example.com").unwrap();
+        assert!(entity.is_none());
     }
 }
