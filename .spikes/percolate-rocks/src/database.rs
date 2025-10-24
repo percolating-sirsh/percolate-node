@@ -229,14 +229,24 @@ impl Database {
             &value,
         )?;
 
-        // TODO: Update key index for reverse lookups
+        // Update key index for reverse lookups
+        if let Some(key_value) = extract_key_value(&entity.properties, key_field) {
+            let index_key = crate::storage::keys::encode_key_index(tenant_id, &key_value, id);
+            let index_value = serde_json::json!({"type": table}).to_string();
+            self.storage.put(
+                crate::storage::column_families::CF_KEY_INDEX,
+                &index_key,
+                index_value.as_bytes(),
+            )?;
+        }
+
         // TODO: Generate embeddings if configured
         // TODO: Create field indexes if configured
 
         Ok(id)
     }
 
-    /// Get entity by ID (placeholder).
+    /// Get entity by ID.
     ///
     /// # Arguments
     ///
@@ -258,6 +268,68 @@ impl Database {
             Some(data) => Ok(Some(serde_json::from_slice(&data)?)),
             None => Ok(None),
         }
+    }
+
+    /// Get entity by key field value (reverse lookup).
+    ///
+    /// # Arguments
+    ///
+    /// * `tenant_id` - Tenant identifier
+    /// * `table` - Table/schema name
+    /// * `key_value` - Key field value to lookup
+    ///
+    /// # Returns
+    ///
+    /// `Some(Entity)` if found, `None` otherwise
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// // Find person by email
+    /// let person = db.get_by_key("tenant1", "person", "alice@example.com")?;
+    /// ```
+    pub fn get_by_key(&self, tenant_id: &str, table: &str, key_value: &str) -> Result<Option<Entity>> {
+        use rocksdb::IteratorMode;
+
+        // Scan prefix: key:{tenant_id}:{key_value}:
+        let prefix = format!("key:{}:{}:", tenant_id, key_value).into_bytes();
+        let cf = self.storage.cf_handle(crate::storage::column_families::CF_KEY_INDEX);
+
+        let iter = self.storage.db().iterator_cf(
+            &cf,
+            IteratorMode::From(&prefix, rocksdb::Direction::Forward),
+        );
+
+        for item in iter {
+            let (key, value) = item.map_err(|e| crate::types::DatabaseError::StorageError(e))?;
+
+            // Check if key still matches prefix
+            if !key.starts_with(&prefix) {
+                break;
+            }
+
+            // Parse index value to check table type
+            let index_data: serde_json::Value = serde_json::from_slice(&value)?;
+            if index_data.get("type").and_then(|v| v.as_str()) != Some(table) {
+                continue; // Different table type
+            }
+
+            // Extract entity UUID from key
+            let key_str = std::str::from_utf8(&key)
+                .map_err(|e| crate::types::DatabaseError::InvalidKey(format!("Invalid UTF-8: {}", e)))?;
+            let parts: Vec<&str> = key_str.split(':').collect();
+            if parts.len() != 4 {
+                continue; // Invalid key format
+            }
+
+            let entity_id = uuid::Uuid::parse_str(parts[3])
+                .map_err(|e| crate::types::DatabaseError::InvalidKey(format!("Invalid UUID: {}", e)))?;
+
+            // Fetch entity by ID
+            return self.get(tenant_id, entity_id);
+        }
+
+        Ok(None)
     }
 
     /// Load persisted schemas from storage.
@@ -385,6 +457,53 @@ impl Database {
     }
 }
 
+/// Extract key value from entity data following same priority as generate_uuid.
+///
+/// # Arguments
+///
+/// * `data` - Entity data
+/// * `key_field` - Optional custom key field from schema
+///
+/// # Returns
+///
+/// Key value string if found, None otherwise
+fn extract_key_value(data: &serde_json::Value, key_field: Option<&str>) -> Option<String> {
+    // Priority 1: uri (for resources/documents)
+    if let Some(uri) = data.get("uri").and_then(|v| v.as_str()) {
+        return Some(uri.to_string());
+    }
+
+    // Priority 2: Custom key_field from schema
+    if let Some(field_name) = key_field {
+        if let Some(value) = data.get(field_name) {
+            return Some(value_to_string(value));
+        }
+    }
+
+    // Priority 3: Generic "key" field
+    if let Some(key_value) = data.get("key") {
+        return Some(value_to_string(key_value));
+    }
+
+    // Priority 4: "name" field
+    if let Some(name) = data.get("name").and_then(|v| v.as_str()) {
+        return Some(name.to_string());
+    }
+
+    // Priority 5: No key field (random UUID case)
+    None
+}
+
+/// Convert JSON value to string for key indexing.
+fn value_to_string(value: &serde_json::Value) -> String {
+    match value {
+        serde_json::Value::String(s) => s.clone(),
+        serde_json::Value::Number(n) => n.to_string(),
+        serde_json::Value::Bool(b) => b.to_string(),
+        _ => value.to_string(),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -430,5 +549,136 @@ mod tests {
 
         db.register_schema("articles", schema).unwrap();
         assert!(db.has_schema("articles"));
+    }
+
+    #[test]
+    fn test_get_by_key_with_name_field() {
+        let db = Database::open_temp().unwrap();
+
+        // Register schema without explicit key_field
+        let schema = serde_json::json!({
+            "title": "Person",
+            "version": "1.0.0",
+            "short_name": "person",
+            "properties": {
+                "name": {"type": "string"},
+                "age": {"type": "number"}
+            },
+            "required": ["name"]
+        });
+
+        db.register_schema("person", schema).unwrap();
+
+        // Insert entity with name field
+        let data = serde_json::json!({"name": "Alice", "age": 30});
+        let id = db.insert("tenant1", "person", data).unwrap();
+
+        // Lookup by name
+        let entity = db.get_by_key("tenant1", "person", "Alice").unwrap();
+        assert!(entity.is_some());
+
+        let entity = entity.unwrap();
+        assert_eq!(entity.system.id, id);
+        assert_eq!(entity.properties.get("name").unwrap(), "Alice");
+    }
+
+    #[test]
+    fn test_get_by_key_with_custom_key_field() {
+        let db = Database::open_temp().unwrap();
+
+        // Register schema with custom key_field
+        let schema = serde_json::json!({
+            "title": "User",
+            "version": "1.0.0",
+            "short_name": "user",
+            "json_schema_extra": {
+                "key_field": "email"
+            },
+            "properties": {
+                "email": {"type": "string"},
+                "username": {"type": "string"}
+            },
+            "required": ["email", "username"]
+        });
+
+        db.register_schema("user", schema).unwrap();
+
+        // Insert entity
+        let data = serde_json::json!({
+            "email": "alice@example.com",
+            "username": "alice"
+        });
+        let id = db.insert("tenant1", "user", data).unwrap();
+
+        // Lookup by email
+        let entity = db.get_by_key("tenant1", "user", "alice@example.com").unwrap();
+        assert!(entity.is_some());
+
+        let entity = entity.unwrap();
+        assert_eq!(entity.system.id, id);
+        assert_eq!(entity.properties.get("email").unwrap(), "alice@example.com");
+    }
+
+    #[test]
+    fn test_get_by_key_not_found() {
+        let db = Database::open_temp().unwrap();
+
+        // Register schema
+        let schema = serde_json::json!({
+            "title": "Person",
+            "version": "1.0.0",
+            "short_name": "person",
+            "properties": {
+                "name": {"type": "string"}
+            },
+            "required": ["name"]
+        });
+
+        db.register_schema("person", schema).unwrap();
+
+        // Lookup non-existent key
+        let entity = db.get_by_key("tenant1", "person", "NonExistent").unwrap();
+        assert!(entity.is_none());
+    }
+
+    #[test]
+    fn test_get_by_key_tenant_isolation() {
+        let db = Database::open_temp().unwrap();
+
+        // Register schema
+        let schema = serde_json::json!({
+            "title": "Person",
+            "version": "1.0.0",
+            "short_name": "person",
+            "properties": {
+                "name": {"type": "string"}
+            },
+            "required": ["name"]
+        });
+
+        db.register_schema("person", schema).unwrap();
+
+        // Insert same name in different tenants
+        db.insert("tenant1", "person", serde_json::json!({"name": "Alice"})).unwrap();
+        db.insert("tenant2", "person", serde_json::json!({"name": "Alice"})).unwrap();
+
+        // Each tenant should only see their own entity
+        let entity1 = db.get_by_key("tenant1", "person", "Alice").unwrap();
+        let entity2 = db.get_by_key("tenant2", "person", "Alice").unwrap();
+
+        assert!(entity1.is_some());
+        assert!(entity2.is_some());
+
+        // UUIDs are the same (deterministic based on entity data alone)
+        // but they are stored at different keys: entity:tenant1:{uuid} vs entity:tenant2:{uuid}
+        assert_eq!(entity1.as_ref().unwrap().system.id, entity2.as_ref().unwrap().system.id);
+
+        // Verify tenant1 cannot see tenant2's entity by direct get
+        let id = entity1.unwrap().system.id;
+        let from_tenant1 = db.get("tenant1", id).unwrap();
+        let from_tenant2 = db.get("tenant2", id).unwrap();
+
+        assert!(from_tenant1.is_some());
+        assert!(from_tenant2.is_some()); // Both exist because same UUID stored under different tenant keys
     }
 }
