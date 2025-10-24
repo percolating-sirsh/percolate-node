@@ -456,6 +456,84 @@ impl Database {
         Ok(())
     }
 
+    /// List entities in a table with optional filters.
+    ///
+    /// # Arguments
+    ///
+    /// * `tenant_id` - Tenant identifier
+    /// * `table` - Table/schema name to scan
+    /// * `include_deleted` - Include soft-deleted entities (default: false)
+    /// * `limit` - Maximum number of entities to return (optional)
+    ///
+    /// # Returns
+    ///
+    /// Vector of entities matching criteria
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// // List all active persons
+    /// let persons = db.list("tenant1", "person", false, None)?;
+    ///
+    /// // List first 10 entities including deleted
+    /// let all = db.list("tenant1", "person", true, Some(10))?;
+    /// ```
+    pub fn list(
+        &self,
+        tenant_id: &str,
+        table: &str,
+        include_deleted: bool,
+        limit: Option<usize>,
+    ) -> Result<Vec<Entity>> {
+        use rocksdb::IteratorMode;
+
+        // Scan prefix: entity:{tenant_id}:
+        let prefix = format!("entity:{}:", tenant_id).into_bytes();
+        let cf = self.storage.cf_handle(crate::storage::column_families::CF_ENTITIES);
+
+        let iter = self.storage.db().iterator_cf(
+            &cf,
+            IteratorMode::From(&prefix, rocksdb::Direction::Forward),
+        );
+
+        let mut entities = Vec::new();
+        let mut count = 0;
+
+        for item in iter {
+            let (key, value) = item.map_err(|e| crate::types::DatabaseError::StorageError(e))?;
+
+            // Check if key still matches prefix
+            if !key.starts_with(&prefix) {
+                break;
+            }
+
+            // Deserialize entity
+            let entity: Entity = serde_json::from_slice(&value)?;
+
+            // Filter by table type
+            if entity.system.entity_type != table {
+                continue;
+            }
+
+            // Filter deleted entities unless explicitly included
+            if !include_deleted && entity.is_deleted() {
+                continue;
+            }
+
+            entities.push(entity);
+            count += 1;
+
+            // Check limit
+            if let Some(max) = limit {
+                if count >= max {
+                    break;
+                }
+            }
+        }
+
+        Ok(entities)
+    }
+
     /// Get entity by key field value (reverse lookup).
     ///
     /// # Arguments
@@ -1036,5 +1114,171 @@ mod tests {
         // Key lookup should return None
         let entity = db.get_by_key("tenant1", "user", "alice@example.com").unwrap();
         assert!(entity.is_none());
+    }
+
+    #[test]
+    fn test_list_entities() {
+        let db = Database::open_temp().unwrap();
+
+        // Register schema
+        let schema = serde_json::json!({
+            "title": "Person",
+            "version": "1.0.0",
+            "short_name": "person",
+            "properties": {
+                "name": {"type": "string"}
+            },
+            "required": ["name"]
+        });
+
+        db.register_schema("person", schema).unwrap();
+
+        // Insert multiple entities
+        db.insert("tenant1", "person", serde_json::json!({"name": "Alice"})).unwrap();
+        db.insert("tenant1", "person", serde_json::json!({"name": "Bob"})).unwrap();
+        db.insert("tenant1", "person", serde_json::json!({"name": "Charlie"})).unwrap();
+
+        // List all persons
+        let entities = db.list("tenant1", "person", false, None).unwrap();
+        assert_eq!(entities.len(), 3);
+
+        let names: Vec<&str> = entities
+            .iter()
+            .map(|e| e.properties.get("name").unwrap().as_str().unwrap())
+            .collect();
+
+        assert!(names.contains(&"Alice"));
+        assert!(names.contains(&"Bob"));
+        assert!(names.contains(&"Charlie"));
+    }
+
+    #[test]
+    fn test_list_with_limit() {
+        let db = Database::open_temp().unwrap();
+
+        // Register schema
+        let schema = serde_json::json!({
+            "title": "Person",
+            "version": "1.0.0",
+            "short_name": "person",
+            "properties": {
+                "name": {"type": "string"}
+            },
+            "required": ["name"]
+        });
+
+        db.register_schema("person", schema).unwrap();
+
+        // Insert multiple entities
+        for i in 0..10 {
+            db.insert("tenant1", "person", serde_json::json!({"name": format!("Person {}", i)})).unwrap();
+        }
+
+        // List with limit
+        let entities = db.list("tenant1", "person", false, Some(5)).unwrap();
+        assert_eq!(entities.len(), 5);
+    }
+
+    #[test]
+    fn test_list_excludes_deleted() {
+        let db = Database::open_temp().unwrap();
+
+        // Register schema
+        let schema = serde_json::json!({
+            "title": "Person",
+            "version": "1.0.0",
+            "short_name": "person",
+            "properties": {
+                "name": {"type": "string"}
+            },
+            "required": ["name"]
+        });
+
+        db.register_schema("person", schema).unwrap();
+
+        // Insert entities
+        let id1 = db.insert("tenant1", "person", serde_json::json!({"name": "Alice"})).unwrap();
+        db.insert("tenant1", "person", serde_json::json!({"name": "Bob"})).unwrap();
+
+        // Soft delete one entity
+        db.delete("tenant1", id1).unwrap();
+
+        // List without deleted entities
+        let entities = db.list("tenant1", "person", false, None).unwrap();
+        assert_eq!(entities.len(), 1);
+        assert_eq!(entities[0].properties.get("name").unwrap(), "Bob");
+
+        // List with deleted entities
+        let all_entities = db.list("tenant1", "person", true, None).unwrap();
+        assert_eq!(all_entities.len(), 2);
+    }
+
+    #[test]
+    fn test_list_tenant_isolation() {
+        let db = Database::open_temp().unwrap();
+
+        // Register schema
+        let schema = serde_json::json!({
+            "title": "Person",
+            "version": "1.0.0",
+            "short_name": "person",
+            "properties": {
+                "name": {"type": "string"}
+            },
+            "required": ["name"]
+        });
+
+        db.register_schema("person", schema).unwrap();
+
+        // Insert entities in different tenants
+        db.insert("tenant1", "person", serde_json::json!({"name": "Alice"})).unwrap();
+        db.insert("tenant1", "person", serde_json::json!({"name": "Bob"})).unwrap();
+        db.insert("tenant2", "person", serde_json::json!({"name": "Charlie"})).unwrap();
+
+        // List for tenant1
+        let entities1 = db.list("tenant1", "person", false, None).unwrap();
+        assert_eq!(entities1.len(), 2);
+
+        // List for tenant2
+        let entities2 = db.list("tenant2", "person", false, None).unwrap();
+        assert_eq!(entities2.len(), 1);
+    }
+
+    #[test]
+    fn test_list_filters_by_table() {
+        let db = Database::open_temp().unwrap();
+
+        // Register multiple schemas
+        let person_schema = serde_json::json!({
+            "title": "Person",
+            "version": "1.0.0",
+            "short_name": "person",
+            "properties": {"name": {"type": "string"}},
+            "required": ["name"]
+        });
+
+        let project_schema = serde_json::json!({
+            "title": "Project",
+            "version": "1.0.0",
+            "short_name": "project",
+            "properties": {"name": {"type": "string"}},
+            "required": ["name"]
+        });
+
+        db.register_schema("person", person_schema).unwrap();
+        db.register_schema("project", project_schema).unwrap();
+
+        // Insert entities in different tables
+        db.insert("tenant1", "person", serde_json::json!({"name": "Alice"})).unwrap();
+        db.insert("tenant1", "person", serde_json::json!({"name": "Bob"})).unwrap();
+        db.insert("tenant1", "project", serde_json::json!({"name": "Project X"})).unwrap();
+
+        // List only persons
+        let persons = db.list("tenant1", "person", false, None).unwrap();
+        assert_eq!(persons.len(), 2);
+
+        // List only projects
+        let projects = db.list("tenant1", "project", false, None).unwrap();
+        assert_eq!(projects.len(), 1);
     }
 }
