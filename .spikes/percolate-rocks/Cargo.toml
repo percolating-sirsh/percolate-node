@@ -11,6 +11,10 @@ license = "MIT"
 name = "percolate_rocks"
 crate-type = ["cdylib", "rlib"]
 
+[[bin]]
+name = "rem"
+path = "src/bin/rem.rs"
+
 [features]
 default = ["python"]
 python = ["pyo3", "pyo3-asyncio"]
@@ -66,6 +70,10 @@ prost = "0.13"
 
 # JSON Schema validation
 jsonschema = "0.18"
+
+# CLI
+clap = { version = "4", features = ["derive", "env"] }
+shellexpand = "3"
 
 # Logging
 tracing = "0.1"

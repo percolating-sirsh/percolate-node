@@ -349,78 +349,27 @@ percolate-core/
 
 ## CLI Design
 
-### Command Structure
 - Flat command structure (avoid deep nesting)
 - Clear, action-oriented command names
-- Rich output for human readability
+- Rich output for human readability (`rich` library)
 - `--json` flag for machine parsing
 - Progress indicators for long operations
-
-### Example Structure (Python + Typer)
-```python
-import typer
-from typing_extensions import Annotated
-
-app = typer.Typer()
-
-@app.command()
-def ingest(
-    file: Annotated[Path, typer.Argument(help="File to ingest")],
-    tenant: Annotated[str, typer.Option(help="Tenant ID")] = "default",
-    parse: bool = True,
-) -> None:
-    """Ingest a document into REM memory."""
-    # Implementation
-```
-
-### Output Conventions
-- Success: Green text with checkmark
-- Errors: Red text with cross
-- Warnings: Yellow text with triangle
-- Info: Blue text
-- Use `rich` for formatted output
 - Structured logs to stderr, results to stdout
+
+See [Schema Patterns](docs/10-schema-patterns.md#cli-command-schema) for detailed examples.
 
 ## Agent-let Patterns
 
-### Agent-let Structure
-- Pure JSON Schema definition
-- System prompt as string field
-- Structured output schema (Pydantic models)
-- MCP tool references (not inline functions)
-- Version metadata (semantic versioning)
+Agent-lets are JSON schema-defined AI skills that can be trained, shared, and evolved.
 
-### Example Schema
-```json
-{
-  "fully_qualified_name": "percolate-agents-researcher",
-  "short_name": "researcher",
-  "version": "1.0.0",
-  "description": "Research agent that searches REM memory and synthesizes findings",
-  "system_prompt": "You are a research assistant...",
-  "output_schema": {
-    "type": "object",
-    "properties": {
-      "findings": {"type": "array"},
-      "sources": {"type": "array"}
-    }
-  },
-  "tools": [
-    {
-      "mcp_server": "percolate",
-      "tool_name": "search_knowledge_base",
-      "usage": "Search REM memory for relevant information"
-    }
-  ]
-}
-```
-
-### Factory Pattern
+**Key principles:**
+- Pure JSON Schema definition (no executable code)
+- MCP tool references only (not inline functions)
+- Semantic versioning for compatibility
 - Single factory function per target (Pydantic AI)
-- Factory takes JSON Schema, returns configured agent
-- No conditional logic in factories
-- Validation at factory boundaries
 - OpenTelemetry instrumentation built in
+
+See [Agent-lets Architecture](docs/03-agentlets.md) and [Schema Patterns](docs/10-schema-patterns.md#agent-let-schema) for detailed examples.
 
 ## Authentication & Security
 
@@ -449,33 +398,25 @@ def ingest(
 
 ## REM Memory Design
 
-### Storage Model
+**Storage model:**
 - **Resources**: Chunked documents with embeddings
 - **Entities**: Graph nodes with KV properties
 - **Moments**: Temporal classifications with timestamps
 
-### Key Conventions
-```
-# Resources
-resource:{tenant_id}:{resource_id} → {content, metadata, embedding_id}
+**Key conventions:**
+- All keys scoped by `tenant_id` for isolation
+- Resources: `resource:{tenant_id}:{resource_id}`
+- Entities: `entity:{tenant_id}:{entity_id}`
+- Edges: `edge:{tenant_id}:{src_id}:{dst_id}:{type}`
+- Moments: `moment:{tenant_id}:{timestamp}:{moment_id}`
 
-# Entities
-entity:{tenant_id}:{entity_id} → {type, properties}
-edge:{tenant_id}:{src_id}:{dst_id}:{type} → {properties}
+**Search strategy:**
+- Vector search for semantic similarity (HNSW)
+- Trigram index for fuzzy entity matching
+- Graph traversal for relationship navigation
+- Hybrid search with score fusion
 
-# Moments
-moment:{tenant_id}:{timestamp}:{moment_id} → {classifications, references}
-
-# Indexes
-index:resource:{tenant_id}:{hash} → {resource_id}
-index:entity:{tenant_id}:{name} → [entity_ids]
-```
-
-### Search Strategy
-1. **Vector search**: Semantic similarity (embeddings)
-2. **Fuzzy search**: Entity name matching (trigram index)
-3. **Graph traversal**: Relationship navigation (BFS/DFS)
-4. **Hybrid**: Combine results with score fusion
+See [REM Memory](docs/02-rem-memory.md) and [Schema Patterns](docs/10-schema-patterns.md#rem-memory-schema) for detailed design and examples.
 
 ## Documentation Guidelines
 
@@ -699,6 +640,29 @@ pub fn parse_document(file_path: &str, tenant_id: &str) -> Result<ParseResult, P
 - Use column families for logical separation
 - Tune bloom filters for query patterns
 - Monitor compaction performance
+
+## Git Workflow
+
+### Commit Messages
+- Keep concise (1-3 lines maximum)
+- Use imperative mood ("Add feature" not "Added feature")
+- No attribution or metadata in message body
+- Focus on what and why, not how
+
+Examples:
+```
+Add vector search to REM memory
+
+Fix entity normalization for multi-word names
+
+Refactor agent factory to support custom tools
+```
+
+### Branching
+- Feature branches: `feature/description`
+- Bug fixes: `fix/description`
+- Keep branches short-lived
+- Rebase on main before PR
 
 ## Review Checklist
 

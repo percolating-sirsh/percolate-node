@@ -8,6 +8,140 @@
 
 This document outlines the implementation plan, design decisions, and open questions for the REM Database clean implementation - a high-performance embedded database combining Rust core with Python ergonomics.
 
+## Implementation Sequence (Bite-Sized Steps)
+
+**Goal:** Working CLI + DB for basic user operations. Each step is testable and commit-worthy.
+
+### Foundation (Steps 1-8)
+1. **Error types** - Implement `DatabaseError` with thiserror (src/types/error.rs)
+   - Test: All error variants construct correctly
+   - Commit: "feat: add database error types"
+
+2. **Entity types** - Implement `Entity`, `SystemFields` (src/types/entity.rs)
+   - Test: Entity serialization round-trip
+   - Commit: "feat: add entity data structures"
+
+3. **Key encoding** - Implement key encoding functions (src/storage/keys.rs)
+   - Test: encode/decode round-trip, deterministic UUID generation
+   - Commit: "feat: add rocksdb key encoding"
+
+4. **Column families** - Implement CF setup (src/storage/column_families.rs)
+   - Test: All CFs created correctly
+   - Commit: "feat: add column family definitions"
+
+5. **Storage layer** - Implement `Storage::open()`, basic put/get (src/storage/db.rs)
+   - Test: Open DB, write/read entity, close DB
+   - Commit: "feat: add rocksdb storage layer"
+
+6. **Background worker** - Implement worker with task queue (src/storage/worker.rs)
+   - Test: Start/stop worker, submit task, wait idle
+   - Commit: "feat: add background worker for async ops"
+
+7. **Schema validator** - Implement JSON Schema validation (src/schema/validator.rs)
+   - Test: Validate valid/invalid schemas
+   - Commit: "feat: add schema validation"
+
+8. **Schema registry** - Implement schema storage and lookup (src/schema/registry.rs)
+   - Test: Register schema, retrieve schema, list schemas
+   - Commit: "feat: add schema registry"
+
+### Core CRUD (Steps 9-13)
+9. **Built-in schemas** - Implement auto-registration (src/schema/builtin.rs)
+   - Test: schemas/documents/resources tables registered on init
+   - Commit: "feat: add built-in system schemas"
+
+10. **Insert operation** - Implement entity insert with validation (src/database/crud.rs)
+    - Test: Insert entity, verify storage, validate against schema
+    - Commit: "feat: add entity insert operation"
+
+11. **Get operation** - Implement entity retrieval by ID (src/database/crud.rs)
+    - Test: Get entity by UUID, handle not found
+    - Commit: "feat: add entity get operation"
+
+12. **Update operation** - Implement entity update (src/database/crud.rs)
+    - Test: Update entity, verify modified_at changes
+    - Commit: "feat: add entity update operation"
+
+13. **Delete operation** - Implement soft delete (src/database/crud.rs)
+    - Test: Delete entity, verify deleted_at set
+    - Commit: "feat: add entity delete operation"
+
+### Indexing (Steps 14-17)
+14. **Field indexer** - Implement indexed field storage (src/index/fields.rs)
+    - Test: Index field value, lookup by field
+    - Commit: "feat: add field indexing"
+
+15. **Key index** - Implement global key lookup (src/index/keys.rs)
+    - Test: Insert with key_field, lookup by key value
+    - Commit: "feat: add global key index"
+
+16. **SQL parser** - Implement basic SELECT parser (src/query/parser.rs)
+    - Test: Parse "SELECT * FROM table WHERE field = 'value'"
+    - Commit: "feat: add sql query parser"
+
+17. **Query executor** - Implement query execution (src/query/executor.rs)
+    - Test: Execute query, return matching entities
+    - Commit: "feat: add query executor"
+
+### Python Bindings (Steps 18-22)
+18. **Database wrapper** - Implement PyO3 Database class (src/bindings/database.rs)
+    - Test: Create DB from Python, call insert/get
+    - Commit: "feat: add python database bindings"
+
+19. **Error conversion** - Implement Rust→Python error mapping (src/bindings/errors.rs)
+    - Test: Rust error converts to Python exception
+    - Commit: "feat: add python error conversion"
+
+20. **Python models** - Create Pydantic models (python/rem_db/models.py)
+    - Test: Article model validates correctly
+    - Commit: "feat: add python pydantic models"
+
+21. **CLI init** - Implement `rem init` command (python/rem_db/cli.py)
+    - Test: `rem init` creates database
+    - Commit: "feat: add rem init cli command"
+
+22. **CLI insert** - Implement `rem insert` command (python/rem_db/cli.py)
+    - Test: `rem insert articles '{"title": "Test"}'` works
+    - Commit: "feat: add rem insert cli command"
+
+### Basic Search (Steps 23-26)
+23. **Embedding provider** - Implement local embeddings (src/embeddings/local.rs)
+    - Test: Generate embedding for text
+    - Commit: "feat: add local embedding provider"
+
+24. **Batch embedder** - Implement batch generation (src/embeddings/batch.rs)
+    - Test: Embed multiple texts in single call
+    - Commit: "feat: add batch embedding"
+
+25. **HNSW index** - Implement vector index (src/index/hnsw.rs)
+    - Test: Add vectors, search nearest neighbors
+    - Commit: "feat: add hnsw vector index"
+
+26. **CLI search** - Implement `rem search` command (python/rem_db/cli.py)
+    - Test: `rem search "query text"` returns results
+    - Commit: "feat: add rem search cli command"
+
+### Polish (Steps 27-30)
+27. **CLI query** - Implement `rem query` command (python/rem_db/cli.py)
+    - Test: `rem query "SELECT * FROM articles"` works
+    - Commit: "feat: add rem query cli command"
+
+28. **CLI schema** - Implement `rem schema` commands (python/rem_db/cli.py)
+    - Test: `rem schema add`, `rem schema list`
+    - Commit: "feat: add rem schema cli commands"
+
+29. **Async index loading** - Implement background index load (src/index/hnsw.rs)
+    - Test: DB opens instantly, index loads in background
+    - Commit: "feat: add async hnsw index loading"
+
+30. **Async embeddings** - Implement background embedding generation (src/embeddings/batch.rs)
+    - Test: Insert returns immediately, embedding generated async
+    - Commit: "feat: add async embedding generation"
+
+**Milestone:** Working CLI with insert, query, search. Users can create DB and store/retrieve data.
+
+---
+
 ## Design Questions
 
 ### 1. Dependency Choices

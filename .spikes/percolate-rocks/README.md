@@ -24,6 +24,35 @@ cd /Users/sirsh/code/percolation/.spikes/percolate-rocks
 maturin develop --release
 ```
 
+### Building
+
+This project supports two build modes:
+
+**Python extension (default):**
+```bash
+# Build and install Python package
+maturin develop
+
+# Syntax check only (faster)
+maturin develop --skip-install
+
+# Note: cargo check/build will fail - use maturin for Python extensions
+```
+
+**Standalone Rust library (no Python):**
+```bash
+# Build as pure Rust library (no Python bindings)
+cargo check --lib --no-default-features
+cargo build --lib --no-default-features --release
+
+# Run tests without Python
+cargo test --lib --no-default-features
+
+# Use in other Rust projects
+# Add to Cargo.toml:
+# percolate-rocks = { version = "0.1", default-features = false }
+```
+
 ### Basic Workflow
 
 Define your schema using Pydantic (in `models.py`):
@@ -352,10 +381,10 @@ NB: Precedence; uri -> key -> name unless specified in config.
 
 | Priority | Field | UUID Generation |
 |----------|-------|-----------------|
-| 1 | `uri` | `blake3(tenant + uri + chunk_ordinal)` |
-| 2 | `json_schema_extra.key_field` | `blake3(tenant + value)` |
-| 3 | `key` | `blake3(tenant + key)` |
-| 4 | `name` | `blake3(tenant + name)` |
+| 1 | `uri` | `blake3(entity_type + uri + chunk_ordinal)` |
+| 2 | `json_schema_extra.key_field` | `blake3(entity_type + value)` |
+| 3 | `key` | `blake3(entity_type + key)` |
+| 4 | `name` | `blake3(entity_type + name)` |
 | 5 | (fallback) | `UUID::v4()` (random) |
 
 Same key → same UUID → upsert semantics.
@@ -422,8 +451,8 @@ NB: WE generally work in batches; batch upserts and batch embeddings. NEVER make
 
 ```bash
 # Core
-export P8_HOME=~/.percolate
-export P8_DB_PATH=$P8_HOME/data
+export P8_HOME=~/.p8
+export P8_DB_PATH=$P8_HOME/db
 
 # Embeddings
 export P8_DEFAULT_EMBEDDING=local:all-MiniLM-L6-v2

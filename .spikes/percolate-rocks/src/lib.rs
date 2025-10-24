@@ -5,9 +5,9 @@
 //! - Graph queries with bidirectional edges
 //! - SQL predicates on indexed fields
 //!
-//! This library provides PyO3 bindings for Python integration.
-
-use pyo3::prelude::*;
+//! Can be used as:
+//! - Standalone Rust library (cargo build --no-default-features)
+//! - Python extension (maturin develop)
 
 pub mod types;
 pub mod storage;
@@ -20,11 +20,19 @@ pub mod replication;
 pub mod export;
 pub mod ingest;
 pub mod llm;
+
+#[cfg(feature = "python")]
 pub mod bindings;
+
+#[cfg(feature = "python")]
+use pyo3::prelude::*;
 
 /// PyO3 module definition for Python integration.
 ///
 /// Exposes the Rust implementation as `rem_db._rust` Python module.
+///
+/// Only available when compiled with the "python" feature (default).
+#[cfg(feature = "python")]
 #[pymodule]
 fn _rust(py: Python, m: &PyModule) -> PyResult<()> {
     bindings::register_module(py, m)?;

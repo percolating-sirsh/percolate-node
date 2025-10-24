@@ -39,6 +39,64 @@ This is a **clean implementation** cherry-picking the best from two spikes:
 
 **If it doesn't need Rust speed, keep it in Python.**
 
+## Building
+
+This project is a **PyO3 extension module** that can be built in two modes:
+
+### Python Extension (Default)
+
+```bash
+# Build and install into current Python environment
+maturin develop
+
+# Syntax check only (faster iteration)
+maturin develop --skip-install
+
+# Release build
+maturin develop --release
+```
+
+**Important:** Do NOT use `cargo check` or `cargo build` directly. They will fail with Python linker errors because the `extension-module` feature configures the library to link against Python at runtime.
+
+### Standalone Rust Library
+
+To use this library in other Rust projects without Python:
+
+```bash
+# Build without Python bindings
+cargo check --lib --no-default-features
+cargo build --lib --no-default-features --release
+
+# Run tests
+cargo test --lib --no-default-features
+```
+
+**In other Rust projects:**
+```toml
+[dependencies]
+percolate-rocks = { version = "0.1", default-features = false }
+```
+
+This excludes PyO3 and pyo3-asyncio, making it a pure Rust library.
+
+### Feature Flags
+
+| Feature | Default | Description |
+|---------|---------|-------------|
+| `python` | ✅ Yes | Enable Python bindings (PyO3) |
+
+**Examples:**
+```bash
+# With Python (default)
+cargo build --lib
+
+# Without Python
+cargo build --lib --no-default-features
+
+# Only Python feature
+cargo build --lib --no-default-features --features python
+```
+
 ## Quick Reference Tables
 
 ### System Fields
@@ -99,8 +157,8 @@ class Resource(BaseModel):
 | Variable | Default | Description | Used By |
 |----------|---------|-------------|---------|
 | **Core** |
-| `P8_HOME` | `~/.percolate` | Data directory root | All |
-| `P8_DB_PATH` | `$P8_HOME/data` | Database storage path | Storage |
+| `P8_HOME` | `~/.p8` | Data directory root | All |
+| `P8_DB_PATH` | `$P8_HOME/db` | Database storage path | Storage |
 | **Embeddings** |
 | `P8_DEFAULT_EMBEDDING` | `local:all-MiniLM-L6-v2` | Default embedding provider | Embeddings |
 | `P8_ALT_EMBEDDING` | (none) | Alternative embedding provider | Embeddings |
@@ -138,8 +196,8 @@ class Resource(BaseModel):
 **TOML Configuration:**
 ```toml
 [core]
-home = "~/.percolate"
-db_path = "$P8_HOME/data"
+home = "~/.p8"
+db_path = "$P8_HOME/db"
 
 [embeddings]
 default = "local:all-MiniLM-L6-v2"
@@ -169,17 +227,17 @@ embedding_batch_size = 100
 
 | Priority | Field Name | UUID Generation | Use Case |
 |----------|-----------|-----------------|----------|
-| 1 | `uri` | `blake3(tenant + uri + chunk_ordinal)` | Resources (chunked documents) |
-| 2 | `json_schema_extra.key_field` | `blake3(tenant + field_value)` | Custom key field |
-| 3 | `key` | `blake3(tenant + key)` | Generic key field |
-| 4 | `name` | `blake3(tenant + name)` | Named entities |
+| 1 | `uri` | `blake3(entity_type + uri + chunk_ordinal)` | Resources (chunked documents) |
+| 2 | `json_schema_extra.key_field` | `blake3(entity_type + field_value)` | Custom key field |
+| 3 | `key` | `blake3(entity_type + key)` | Generic key field |
+| 4 | `name` | `blake3(entity_type + name)` | Named entities |
 | 5 | (none) | `UUID::v4()` (random) | No natural key |
 
 **Example:**
 ```python
 # Resource with uri (priority 1)
 {"uri": "https://docs.python.org", "content": "..."}
-# → UUID = blake3("tenant:resources:https://docs.python.org:0")
+# → UUID = blake3("resources:https://docs.python.org:0")
 
 # Person with custom key_field (priority 2)
 class Person(BaseModel):
@@ -187,23 +245,23 @@ class Person(BaseModel):
     model_config = ConfigDict(json_schema_extra={"key_field": "email"})
 
 {"email": "alice@co.com", "name": "Alice"}
-# → UUID = blake3("tenant:person:alice@co.com")
+# → UUID = blake3("person:alice@co.com")
 
 # Generic entity with name (priority 4)
 {"name": "Project Alpha", "description": "..."}
-# → UUID = blake3("tenant:table:Project Alpha")
+# → UUID = blake3("projects:Project Alpha")
 ```
 
 ### Column Families
 
 | Column Family | Key Pattern | Value | Purpose |
 |---------------|-------------|-------|---------|
-| **entities** | `entity:{tenant}:{uuid}` | Entity (JSON) | Main entity storage |
-| **key_index** | `key:{tenant}:{key_value}:{uuid}` | `{type: string}` | Reverse key lookup (global search) |
+| **entities** | `entity:{uuid}` | Entity (JSON) | Main entity storage |
+| **key_index** | `key:{key_value}:{uuid}` | `{type: string}` | Reverse key lookup (global search) |
 | **edges** | `src:{uuid}:dst:{uuid}:type:{rel}` | EdgeData (JSON) | Forward graph edges |
 | **edges_reverse** | `dst:{uuid}:src:{uuid}:type:{rel}` | EdgeData (JSON) | Reverse graph edges |
-| **embeddings** | `emb:{tenant}:{uuid}` | `[f32; dim]` (binary) | Vector embeddings (compact) |
-| **indexes** | `idx:{tenant}:{field}:{value}:{uuid}` | `{}` (empty) | Indexed field lookups |
+| **embeddings** | `emb:{uuid}` | `[f32; dim]` (binary) | Vector embeddings (compact) |
+| **indexes** | `idx:{entity_type}:{field}:{value}:{uuid}` | `{}` (empty) | Indexed field lookups |
 | **wal** | `wal:{seq}` | WalEntry (bincode) | Write-ahead log (replication) |
 
 **Storage Rationale:**
@@ -223,6 +281,28 @@ class Person(BaseModel):
 | **Moments** | Temporal classifications | Sprints, meetings, milestones | Time-range queries |
 
 **Key Insight:** All three are stored as **entities** in RocksDB. REM is a **conceptual model**, not separate tables.
+
+### Built-in Schema Templates
+
+For quick setup, use built-in templates via CLI:
+
+| Template | Use Case | Key Fields | Configuration |
+|----------|----------|------------|---------------|
+| `resources` | Documents, articles, PDFs | `name`, `content`, `uri`, `chunk_ordinal` | Embeds `content`, indexes `content_type`, key: `uri` |
+| `entities` | Generic structured data | `name`, `key`, `properties` | Indexes `name`, key: `name` |
+| `agentlets` | AI agent definitions | `description`, `tools`, `resources` | Embeds `description`, includes MCP config |
+| `moments` | Temporal events | `name`, `start_time`, `end_time`, `classifications` | Indexes `start_time`, `end_time` |
+
+**CLI usage:**
+```bash
+# Create from template
+rem schema add --name my_docs --template resources
+
+# Save to file for customization
+rem schema add --name my_docs --template resources --output my_docs.yaml
+```
+
+See [README.md](./README.md) for detailed template examples.
 
 ```python
 # Resource (chunked document)
@@ -301,7 +381,7 @@ class Article(BaseModel):
             "key_field": "uri",                      # blake3(uri + chunk_ordinal)
 
             # Schema metadata
-            "fully_qualified_name": "myapp.resources.Article",
+            "name": "myapp.resources.Article",
             "short_name": "articles",
             "version": "1.0.0",
             "category": "user",                      # system | user
@@ -351,7 +431,7 @@ class CDAMappingAgent(BaseModel):
     model_config = ConfigDict(
         json_schema_extra={
             # Agent metadata
-            "fully_qualified_name": "carrier.agents.cda_mapper.CDAMappingAgent",
+            "name": "carrier.agents.cda_mapper.CDAMappingAgent",
             "short_name": "cda_mapper",
             "version": "1.0.0",
             "category": "system",
@@ -413,7 +493,7 @@ Agent-lets are stored as **both** Pydantic models (Python) and pure JSON Schema 
   "description": "You are a CDA Mapping Expert...",  // System prompt
   "version": "1.0.0",
   "short_name": "cda_mapper",
-  "fully_qualified_name": "carrier.agents.cda_mapper.CDAMappingAgent",
+  "name": "carrier.agents.cda_mapper.CDAMappingAgent",
 
   "json_schema_extra": {
     "tools": [
@@ -453,7 +533,7 @@ Agent-lets are stored as **both** Pydantic models (Python) and pure JSON Schema 
 1. **`json_schema_extra` is the configuration hub** - All metadata, tools, resources, embeddings
 2. **System prompt in `description`** - For agents, description is the full system prompt
 3. **Tools and resources** - MCP server references, not inline functions
-4. **Fully qualified names** - Namespace collision avoidance (e.g., `carrier.agents.cda_mapper`)
+4. **Namespaced names** - Use `name` field for namespace collision avoidance (e.g., `carrier.agents.cda_mapper`)
 5. **Version metadata** - Semantic versioning for schema evolution
 6. **Structured output** - Complex nested schemas with validation
 
@@ -553,7 +633,6 @@ src/
 ///
 /// # Arguments
 ///
-/// * `tenant_id` - Tenant scope
 /// * `entity_id` - UUID of entity
 ///
 /// # Returns
@@ -567,11 +646,11 @@ src/
 /// # Example
 ///
 /// ```
-/// let entity = db.get_entity("tenant", uuid)?;
+/// let entity = db.get_entity(uuid)?;
 /// assert_eq!(entity.unwrap().entity_type, "articles");
 /// ```
-pub fn get_entity(&self, tenant_id: &str, entity_id: Uuid) -> Result<Option<Entity>> {
-    let key = encode_entity_key(tenant_id, entity_id);
+pub fn get_entity(&self, entity_id: Uuid) -> Result<Option<Entity>> {
+    let key = encode_entity_key(entity_id);
     let bytes = self.storage.get(CF_ENTITIES, &key)?;
 
     match bytes {
@@ -636,16 +715,16 @@ mod tests {
 
     #[test]
     fn test_encode_entity_key() {
-        let key = encode_entity_key("tenant", Uuid::nil());
-        assert!(key.starts_with(b"entity:tenant:"));
+        let key = encode_entity_key(Uuid::nil());
+        assert!(key.starts_with(b"entity:"));
     }
 
     #[test]
     fn test_roundtrip_encoding() {
         let original = Uuid::new_v4();
-        let encoded = encode_entity_key("tenant", original);
+        let encoded = encode_entity_key(original);
         let decoded = decode_entity_key(&encoded).unwrap();
-        assert_eq!(decoded.1, original);
+        assert_eq!(decoded, original);
     }
 }
 ```
@@ -802,7 +881,7 @@ from rem_db import Database
 
 @pytest.fixture
 def db(tmp_path):
-    return Database(tenant_id="test", path=str(tmp_path))
+    return Database(path=str(tmp_path))
 
 def test_deterministic_uuid(db):
     id1 = db.insert("table", {"name": "Alice"})
