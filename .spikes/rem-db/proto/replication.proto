@@ -1,0 +1,102 @@
+syntax = "proto3";
+
+package rem.replication;
+
+// Replication service for peer-to-peer WAL streaming
+service ReplicationService {
+  // Bidirectional streaming for peer synchronization
+  // Supports historical catchup and real-time updates
+  rpc StreamWAL(stream WALRequest) returns (stream WALResponse);
+
+  // Health check for peer monitoring
+  rpc HealthCheck(HealthRequest) returns (HealthResponse);
+}
+
+// Request message for WAL streaming
+message WALRequest {
+  oneof request {
+    SubscribeRequest subscribe = 1;  // Initial subscription
+    AckRequest ack = 2;               // Acknowledge receipt
+    WALEntry push_entry = 3;          // Push local entry to peer
+  }
+}
+
+// Subscription request to start streaming
+message SubscribeRequest {
+  string peer_id = 1;                // Requesting peer's ID
+  string tenant_id = 2;              // Tenant scope for replication
+  repeated string tablespaces = 3;   // Which tablespaces to replicate (["*"] for all)
+  uint64 watermark = 4;              // Resume from this sequence number
+  bool encryption_enabled = 5;       // Whether cross-tenant encryption is enabled
+  bytes auth_token = 6;              // Authentication token (optional)
+}
+
+// Acknowledge message for flow control
+message AckRequest {
+  uint64 seq_num = 1;  // Acknowledge receipt up to this sequence number
+}
+
+// Response message for WAL streaming
+message WALResponse {
+  oneof response {
+    ConnectedResponse connected = 1;   // Connection established
+    HistoricalBatch historical = 2;    // Batch of historical entries
+    WALEntry entry = 3;                // Single real-time entry
+    ErrorResponse error = 4;           // Error notification
+  }
+}
+
+// Connection acknowledgment
+message ConnectedResponse {
+  uint64 current_seq = 1;      // Server's current sequence number
+  string server_peer_id = 2;   // Server's peer ID
+  int64 server_timestamp = 3;  // Server's current timestamp (nanoseconds)
+}
+
+// Batch of historical WAL entries (for catchup)
+message HistoricalBatch {
+  repeated WALEntry entries = 1;  // Batch of entries
+  uint64 batch_start = 2;         // First seq_num in batch
+  uint64 batch_end = 3;           // Last seq_num in batch
+  bool has_more = 4;              // Whether more batches follow
+}
+
+// Write-Ahead Log entry
+message WALEntry {
+  uint64 seq_num = 1;       // Monotonic sequence number (per instance)
+  string tenant_id = 2;     // Tenant scope
+  string tablespace = 3;    // Which table/column family
+  string operation = 4;     // "PUT" or "DELETE"
+  bytes key = 5;            // Key (already prefixed with tenant_id)
+  bytes value = 6;          // Value (encrypted for same-tenant, re-encrypted for cross-tenant)
+  int64 timestamp = 7;      // Operation timestamp (nanoseconds since epoch)
+  string source_peer_id = 8; // Original peer that created this entry
+}
+
+// Error response
+message ErrorResponse {
+  string code = 1;          // Error code (e.g., "UNAUTHORIZED", "INVALID_WATERMARK")
+  string message = 2;       // Human-readable error message
+  bool retryable = 3;       // Whether client should retry
+}
+
+// Health check request
+message HealthRequest {
+  string peer_id = 1;  // Requesting peer's ID (optional)
+}
+
+// Health check response
+message HealthResponse {
+  bool healthy = 1;          // Whether server is healthy
+  uint64 current_seq = 2;    // Server's current sequence number
+  int64 server_timestamp = 3; // Server's current timestamp
+  repeated PeerStatus peers = 4; // Status of connected peers
+}
+
+// Status of a connected peer
+message PeerStatus {
+  string peer_id = 1;        // Peer's ID
+  uint64 watermark = 2;      // Peer's last acknowledged seq_num
+  int64 last_seen = 3;       // Last activity timestamp
+  bool connected = 4;        // Whether peer is currently connected
+}

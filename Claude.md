@@ -100,8 +100,18 @@ percolation/
 │   │   ├── settings.py     # Pydantic settings
 │   │   └── version.py      # Version management
 │   ├── tests/
-│   │   ├── unit/           # Unit tests (no external services)
-│   │   └── integration/    # Integration tests (real connections)
+│   │   ├── fixtures/          # Shared test fixtures and data
+│   │   ├── unit/              # Unit tests (no external services)
+│   │   │   ├── agents/        # Agent factory and context tests
+│   │   │   ├── mcp/           # MCP tool logic tests
+│   │   │   ├── auth/          # Auth model and crypto tests
+│   │   │   ├── test_imports.py
+│   │   │   └── __init__.py
+│   │   └── integration/       # Integration tests (real connections)
+│   │       ├── agents/        # Full agent execution tests
+│   │       ├── mcp/           # MCP server protocol tests
+│   │       ├── auth/          # OAuth flow tests
+│   │       └── __init__.py
 │   └── pyproject.toml      # UV project configuration
 ├── percolate-core/         # Rust implementation (PyO3)
 │   ├── src/
@@ -131,16 +141,29 @@ percolation/
 ├── schema/                 # Agent-let definitions (JSON schemas)
 │   ├── agentlets/
 │   └── evaluators/
-├── docs/                   # Architecture documentation
+├── percolate/docs/         # Implementation documentation
+│   ├── 00-overview.md      # System architecture
+│   ├── 01-testing.md       # Test organization
+│   ├── 02-agentlets.md     # Agent-let patterns
+│   ├── 03-auth.md          # Authentication
+│   ├── 04-mcp.md           # MCP protocol
+│   └── 05-evals.md         # Evaluation framework
+├── docs/                   # Planning documentation
 │   ├── 01-architecture.md
 │   ├── 02-rem-memory.md
-│   ├── 03-agent-lets.md
-│   ├── 04-authentication.md
-│   ├── 05-deployment.md
+│   ├── 03-agentlets.md
+│   ├── 04-sync-replication.md
+│   ├── 05-sharing-collaboration.md
+│   ├── 06-cloud-deployment.md
+│   ├── 07-multi-tenant-allocation.md
+│   ├── 08-mcp-protocol.md
+│   ├── 09-cluster-nodes.md # Kubernetes deployment
 │   └── components/
 │       ├── memory-engine.md
-│       ├── auth-flow.md
-│       └── parsing-pipeline.md
+│       ├── storage-provider.md
+│       ├── parsing-pipeline.md
+│       ├── query-layer.md
+│       └── auth-flow.md
 └── .spikes/                # Experimental code and prototypes
     ├── README.md               # Spikes overview and guidelines
     ├── rem-db/                 # REM database spike (Python → Rust)
@@ -250,20 +273,28 @@ The `.spikes/` directory contains **experimental implementations** for testing c
 
 ### Testing
 
+**Important: All tests must be in the `tests/` directory with proper organization.**
+
 **Python Tests (pytest):**
 ```
-tests/
-├── fixtures/          # Shared test fixtures and data
-├── unit/              # Unit tests - no external services
-│   ├── agents/
-│   ├── memory/
-│   ├── parsers/
-│   └── auth/
-└── integration/       # Integration tests - real external connections
-    ├── agents/
-    ├── memory/
-    ├── mcp/
-    └── auth/
+percolate/tests/
+├── fixtures/             # Shared test fixtures and data
+│   ├── agentlets/        # Sample agent schemas
+│   └── documents/        # Test documents
+├── unit/                 # Unit tests - no external services
+│   ├── agents/           # Agent factory, context tests
+│   ├── mcp/              # MCP tool logic tests
+│   │   └── test_tools.py
+│   ├── auth/             # Auth model and crypto tests
+│   ├── test_imports.py   # Dependency verification
+│   └── __init__.py
+└── integration/          # Integration tests - real connections
+    ├── agents/           # Full agent execution tests
+    │   └── test_agent_eval.py
+    ├── mcp/              # MCP server protocol tests
+    │   └── test_mcp_server.py
+    ├── auth/             # OAuth flow tests
+    └── __init__.py
 ```
 
 **Rust Tests (cargo test):**
@@ -278,6 +309,35 @@ percolate-core/
         └── memory_test.rs
 ```
 
+**Test Organization Rules:**
+1. **Never put test files in project root** - always in `tests/` directory
+2. **Unit tests** (`tests/unit/`):
+   - No external services (no HTTP, no database)
+   - Fast execution (< 1s per test)
+   - Mock external dependencies minimally
+   - Test pure logic and data transformations
+3. **Integration tests** (`tests/integration/`):
+   - Real external connections (HTTP server, database)
+   - May be slower (acceptable up to 10s per test)
+   - Require services to be running
+   - Test end-to-end workflows
+4. **Naming conventions**:
+   - Test files: `test_*.py` or `*_test.py`
+   - Test functions: `test_*`
+   - Test classes: `Test*`
+5. **Running tests**:
+   ```bash
+   # Unit tests only (fast, no server needed)
+   uv run pytest tests/unit/
+
+   # Integration tests (requires running server)
+   uv run percolate serve &
+   uv run pytest tests/integration/
+
+   # All tests
+   uv run pytest
+   ```
+
 **Principles:**
 - Unit tests: no external services, fast execution
 - Integration tests: real connections, may be slower
@@ -285,6 +345,7 @@ percolate-core/
 - Rust: Use test doubles for external I/O
 - Test error paths explicitly
 - Use property-based testing for complex logic (proptest in Rust)
+- Each test should be independent and idempotent
 
 ## CLI Design
 
@@ -416,8 +477,155 @@ index:entity:{tenant_id}:{name} → [entity_ids]
 3. **Graph traversal**: Relationship navigation (BFS/DFS)
 4. **Hybrid**: Combine results with score fusion
 
+## Documentation Guidelines
+
+### Writing Style
+
+**General Principles:**
+- **Clear and concise** - Every word should add value
+- **Sentence case for headings** - Not Title Case or UPPER CASE
+- **No uppercase acronyms in headings** - Use "MCP protocol" not "MCP Protocol"
+- **Technical accuracy** - Verify claims and examples
+- **Active voice** - Prefer "The function returns X" over "X is returned"
+- **Present tense** - Use "returns" not "will return"
+
+**Avoid:**
+- ❌ Uppercase in headings: `## MCP PROTOCOL` or `## IMPORTANT NOTICE`
+- ❌ Marketing language: "amazing", "powerful", "revolutionary"
+- ❌ Unnecessary emphasis: Multiple exclamation marks!!
+- ❌ Vague descriptions: "handles various things", "works with data"
+
+**Prefer:**
+- ✅ Sentence case: `## MCP protocol` or `## Important notice`
+- ✅ Precise language: "concise", "efficient", "novel"
+- ✅ Measured tone: Single punctuation only
+- ✅ Specific descriptions: "parses PDF documents", "validates JSON schemas"
+
+### README Structure
+
+```markdown
+# Project Name
+
+Brief description (one sentence).
+
+## Overview
+
+What this project does and why it exists (2-3 paragraphs max).
+
+## Installation
+
+```bash
+uv sync
+```
+
+## Usage
+
+Basic usage examples with code.
+
+## Architecture
+
+Key design decisions (link to detailed docs).
+
+## Contributing
+
+How to contribute (link to CONTRIBUTING.md if complex).
+
+## License
+
+License information.
+```
+
+### Code Documentation
+
+**Docstrings (Python):**
+```python
+def parse_document(file_path: str, tenant_id: str) -> ParseResult:
+    """Parse a document and extract structured information.
+
+    Args:
+        file_path: Path to the document file
+        tenant_id: Tenant scope for the operation
+
+    Returns:
+        ParseResult with extracted content and metadata
+
+    Raises:
+        FileNotFoundError: If file_path does not exist
+        ValueError: If file format is unsupported
+
+    Example:
+        >>> result = parse_document("doc.pdf", "tenant-123")
+        >>> print(result.content)
+    """
+```
+
+**Documentation Comments (Rust):**
+```rust
+/// Parse a document and extract structured information.
+///
+/// # Arguments
+///
+/// * `file_path` - Path to the document file
+/// * `tenant_id` - Tenant scope for the operation
+///
+/// # Returns
+///
+/// `Result<ParseResult, ParseError>` with extracted content
+///
+/// # Errors
+///
+/// Returns `ParseError::FileNotFound` if file doesn't exist.
+///
+/// # Example
+///
+/// ```
+/// let result = parse_document("doc.pdf", "tenant-123")?;
+/// println!("{}", result.content);
+/// ```
+pub fn parse_document(file_path: &str, tenant_id: &str) -> Result<ParseResult, ParseError> {
+    // Implementation
+}
+```
+
+### Markdown Conventions
+
+**Headings:**
+- Use sentence case: `## Test organization` not `## Test Organization`
+- No trailing punctuation
+- Maximum 3 levels deep in README files
+
+**Code blocks:**
+- Always specify language: ` ```python `, not ` ``` `
+- Include comments for clarity
+- Keep examples runnable
+
+**Lists:**
+- Use `-` for unordered lists (not `*` or `+`)
+- Use `1.` for ordered lists
+- Keep items parallel in structure
+
+**Emphasis:**
+- `**bold**` for important terms (first use)
+- `*italic*` for emphasis (sparingly)
+- `` `code` `` for inline code, filenames, commands
+
+### Technical Documentation
+
+**Architecture docs** (`docs/` directory):
+- Explain the "why" not just the "what"
+- Include diagrams (ASCII art acceptable)
+- Link to related code files
+- Update when implementation changes
+
+**API documentation:**
+- Describe every parameter
+- Specify return types
+- List possible errors
+- Provide runnable examples
+
 ## Anti-Patterns to Avoid
 
+### Code Anti-Patterns
 - Magic values (use constants or configuration)
 - God classes or modules (keep focused)
 - Deep inheritance hierarchies (prefer composition)
@@ -428,6 +636,14 @@ index:entity:{tenant_id}:{name} → [entity_ids]
 - Overly clever code (clarity over cleverness)
 - Panic in library code (Rust - use Result)
 - Unwrap without justification (Rust)
+
+### Documentation Anti-Patterns
+- Uppercase headings (except proper acronyms like NASA, HTTP)
+- Outdated examples that don't run
+- Missing parameter descriptions
+- Vague "TODO" comments without context
+- Copy-pasted documentation from other projects
+- Marketing language instead of technical precision
 
 ## Dependencies
 

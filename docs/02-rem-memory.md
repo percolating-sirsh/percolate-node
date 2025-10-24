@@ -1,5 +1,8 @@
 # REM Memory System
 
+Natural language information retrieval with REM.
+
+
 ## Overview
 
 **REM (Resources-Entities-Moments)** is a bio-inspired memory architecture that mirrors human memory systems:

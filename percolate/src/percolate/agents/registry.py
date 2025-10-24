@@ -96,8 +96,8 @@ def list_user_agentlets(tenant_id: str) -> list[dict[str, Any]]:
 
 def _get_agentlets_dir() -> Path:
     """Get path to system agent-let schemas directory."""
-    # Relative to package root
-    return Path(__file__).parent.parent.parent.parent.parent / "schema" / "agentlets"
+    # Relative to percolate package (src/percolate/schema/agentlets)
+    return Path(__file__).parent.parent / "schema" / "agentlets"
 
 
 def _get_system_agentlet_path(uri: str) -> Path:

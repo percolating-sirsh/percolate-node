@@ -1,6 +1,7 @@
 """Application settings using Pydantic Settings."""
 
-from pydantic import Field
+import os
+from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -32,7 +33,7 @@ class Settings(BaseSettings):
 
     # LLM
     default_model: str = Field(
-        default="claude-sonnet-4.5", description="Default LLM model"
+        default="anthropic:claude-3-5-sonnet-20241022", description="Default LLM model"
     )
     anthropic_api_key: str | None = Field(default=None, description="Anthropic API key")
     openai_api_key: str | None = Field(default=None, description="OpenAI API key")
@@ -51,6 +52,20 @@ class Settings(BaseSettings):
 
     # MCP
     mcp_enabled: bool = Field(default=True, description="Enable MCP server")
+
+    @model_validator(mode="after")
+    def sync_api_keys_to_env(self) -> "Settings":
+        """Sync API keys to environment variables for Pydantic AI providers.
+
+        Pydantic AI providers read directly from environment variables
+        (ANTHROPIC_API_KEY, OPENAI_API_KEY) rather than from settings.
+        This validator ensures keys are available in the environment.
+        """
+        if self.anthropic_api_key and not os.environ.get("ANTHROPIC_API_KEY"):
+            os.environ["ANTHROPIC_API_KEY"] = self.anthropic_api_key
+        if self.openai_api_key and not os.environ.get("OPENAI_API_KEY"):
+            os.environ["OPENAI_API_KEY"] = self.openai_api_key
+        return self
 
 
 settings = Settings()

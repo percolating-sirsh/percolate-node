@@ -35,7 +35,7 @@ class AgentContext(BaseModel):
         description="Device identifier for auth tracking"
     )
     default_model: str = Field(
-        default="claude-sonnet-4.5",
+        default="anthropic:claude-3-5-sonnet-20241022",
         description="Default LLM model for agent execution"
     )
     agent_schema_uri: str | None = Field(

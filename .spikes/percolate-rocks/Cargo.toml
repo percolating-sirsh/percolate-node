@@ -1,0 +1,92 @@
+[package]
+name = "percolate-rocks"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.75"
+authors = ["Percolate Team"]
+description = "High-performance embedded database for semantic search, graph queries, and structured data"
+license = "MIT"
+
+[lib]
+name = "percolate_rocks"
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+# Python bindings
+pyo3 = { version = "0.20", features = ["extension-module", "abi3-py38"] }
+
+# Storage
+rocksdb = { version = "0.22", features = ["multi-threaded-cf"] }
+
+# Async runtime
+tokio = { version = "1", features = ["full"] }
+pyo3-asyncio = { version = "0.20", features = ["tokio-runtime"] }
+async-trait = "0.1"
+
+# Serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+bincode = "1"
+
+# Error handling
+thiserror = "1"
+anyhow = "1"
+
+# UUID and hashing
+uuid = { version = "1", features = ["v4", "serde"] }
+blake3 = "1"
+
+# Vector search
+# Reference impl uses hnswlib (Python bindings)
+# For Rust: instant-distance is a pure Rust HNSW implementation
+instant-distance = "0.6"
+
+# SQL parsing and execution
+sqlparser = "0.51"
+
+# Embeddings - Reference impl uses sentence-transformers (Python)
+# For Rust, we'll expose sentence-transformers via PyO3 or use OpenAI API
+# NO fastembed - not in reference implementation
+reqwest = { version = "0.12", features = ["json"] }  # For OpenAI API calls
+
+# Parquet export
+parquet = { version = "53", features = ["arrow"] }
+arrow = "53"
+
+# Replication (gRPC)
+tonic = "0.12"
+prost = "0.13"
+
+# JSON Schema validation
+jsonschema = "0.18"
+
+# Logging
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# Performance
+rayon = "1"
+crossbeam = "0.8"
+
+[build-dependencies]
+tonic-build = "0.12"
+
+[dev-dependencies]
+tempfile = "3"
+criterion = "0.5"
+proptest = "1"
+
+# Benchmarks commented out until implemented
+# [[bench]]
+# name = "vector_search"
+# harness = false
+
+# [[bench]]
+# name = "sql_query"
+# harness = false
+
+[profile.release]
+opt-level = 3
+lto = "fat"
+codegen-units = 1
+strip = true

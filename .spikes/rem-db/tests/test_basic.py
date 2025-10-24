@@ -36,6 +36,7 @@ def db():
 def test_create_and_get_resource(db):
     """Test resource CRUD operations."""
     resource = Resource(
+        name="test.txt",
         content="The quick brown fox jumps over the lazy dog.",
         metadata={"source": "test.txt", "author": "Alice"},
     )
@@ -48,6 +49,7 @@ def test_create_and_get_resource(db):
     retrieved = db.get_resource(resource_id)
     assert retrieved is not None
     assert retrieved.content == resource.content
+    assert retrieved.name == "test.txt"
     assert retrieved.metadata == resource.metadata
 
     # Delete
@@ -80,6 +82,7 @@ def test_query_resources_with_predicates(db):
     # Create multiple resources
     for i in range(10):
         resource = Resource(
+            name=f"doc-{i}",
             content=f"Document {i}",
             metadata={"index": i, "even": i % 2 == 0, "author": "Alice" if i < 5 else "Bob"},
         )
@@ -179,7 +182,7 @@ def test_entity_edges(db):
 def test_moments(db):
     """Test moment creation and querying."""
     # Create resources and entities
-    resource = Resource(content="Meeting notes")
+    resource = Resource(name="meeting", content="Meeting notes")
     entity = Entity(type="person", name="Alice")
 
     resource_id = db.create_resource(resource)
@@ -208,7 +211,7 @@ def test_vector_search(db):
     # Create resources with embeddings
     vectors = []
     for i in range(10):
-        resource = Resource(content=f"Document {i}", metadata={"index": i})
+        resource = Resource(name=f"doc-{i}", content=f"Document {i}", metadata={"index": i})
         resource_id = db.create_resource(resource)
 
         # Create random vector
@@ -230,6 +233,7 @@ def test_hybrid_search(db):
     # Create resources with metadata and embeddings
     for i in range(20):
         resource = Resource(
+            name=f"doc-{i}",
             content=f"Document {i}",
             metadata={
                 "index": i,
@@ -260,9 +264,9 @@ def test_string_predicates(db):
     """Test string-based predicates."""
     # Create resources
     resources = [
-        Resource(content="Hello World", metadata={"title": "hello_world.txt"}),
-        Resource(content="Goodbye World", metadata={"title": "goodbye_world.txt"}),
-        Resource(content="Hello Everyone", metadata={"title": "hello_everyone.txt"}),
+        Resource(name="hello_world.txt", content="Hello World", metadata={"title": "hello_world.txt"}),
+        Resource(name="goodbye_world.txt", content="Goodbye World", metadata={"title": "goodbye_world.txt"}),
+        Resource(name="hello_everyone.txt", content="Hello Everyone", metadata={"title": "hello_everyone.txt"}),
     ]
 
     for r in resources:
@@ -282,7 +286,7 @@ def test_string_predicates(db):
 def test_tenant_isolation(db):
     """Test that different tenants are isolated."""
     # Create resource in test-tenant
-    resource1 = Resource(content="Tenant 1 data")
+    resource1 = Resource(name="tenant1-doc", content="Tenant 1 data")
     db.create_resource(resource1)
 
     # Create another database for different tenant
@@ -290,7 +294,7 @@ def test_tenant_isolation(db):
 
     try:
         # Create resource in other-tenant
-        resource2 = Resource(content="Tenant 2 data")
+        resource2 = Resource(name="tenant2-doc", content="Tenant 2 data")
         db2.create_resource(resource2)
 
         # Query each tenant

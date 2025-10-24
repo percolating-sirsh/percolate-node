@@ -44,6 +44,7 @@ def db_with_vectors(db):
     # Create 10k resources with embeddings
     for i in range(10000):
         resource = Resource(
+            name=f"doc-{i}",
             content=f"Document {i}",
             metadata={
                 "index": i,
@@ -183,7 +184,7 @@ def test_vector_index_build_time(db):
     start = time.perf_counter()
 
     for i in range(num_vectors):
-        resource = Resource(content=f"Doc {i}")
+        resource = Resource(name=f"doc-{i}", content=f"Doc {i}")
         resource_id = db.create_resource(resource)
 
         vector = np.random.rand(768).astype(np.float32)

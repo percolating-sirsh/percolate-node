@@ -1,0 +1,5 @@
+{"name": "Rust Programming", "content": "Rust is a systems programming language focused on safety, speed, and concurrency.", "category": "technology"}
+{"name": "Database Systems", "content": "Databases are organized collections of data that can be easily accessed, managed, and updated.", "category": "technology"}
+{"name": "Vector Embeddings", "content": "Vector embeddings are dense numerical representations of data that capture semantic meaning.", "category": "ai"}
+{"name": "RocksDB Overview", "content": "RocksDB is an embeddable persistent key-value store optimized for fast storage.", "category": "database"}
+{"name": "Semantic Search", "content": "Semantic search improves search accuracy by understanding the intent and contextual meaning of search queries.", "category": "ai"}

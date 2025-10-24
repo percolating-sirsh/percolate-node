@@ -1,508 +1,567 @@
-# Spike: REM Database (RocksDB + Vectors + Predicates)
-
-## Goal
-
-Build a fast, usable RocksDB-based implementation of the REM (Resources-Entities-Moments) memory system with:
-- Vector search support using HNSW
-- SQL-like predicate queries over metadata
-- Complete tenant isolation
-- Hybrid search combining semantic and metadata filtering
-
-**Why Python first?** Rapid iteration on API design and data structures before committing to Rust implementation.
-
-## Questions to Answer
-
-### Performance
-- [ ] Can we achieve <10ms p50 for simple predicate queries?
-- [ ] How does vector search scale with 100k, 1M, 10M vectors per tenant?
-- [ ] What's the overhead of tenant isolation (separate RocksDB instances)?
-- [ ] Can concurrent writes from multiple threads work safely?
-- [ ] What's the memory footprint per tenant?
-
-### API Design
-- [ ] What's the most ergonomic Python API for REM operations?
-- [ ] How should predicates compose (builder pattern vs functional)?
-- [ ] Should vector search be a special predicate or separate operation?
-- [ ] How do we handle schema-less entities cleanly?
-
-### Data Model
-- [ ] What RocksDB key patterns give best performance?
-- [ ] Do we need column families or can we use prefixes?
-- [ ] How do we index metadata fields efficiently?
-- [ ] What's the best chunking strategy for resources?
-
-### Tenant Isolation
-- [ ] Separate RocksDB instances or shared with prefixes?
-- [ ] How do we prevent cross-tenant queries?
-- [ ] What's the overhead of multiple RocksDB instances?
-- [ ] Can we safely evict/load tenant databases?
-
-## Approach
-
-### Phase 1: Core REM Operations (Days 1-2)
-
-Build minimal REM database with:
-
-```python
-from rem_db import REMDatabase, Resource, Entity, Moment
-
-# Initialize tenant database
-db = REMDatabase(tenant_id="tenant-123", path="./data")
-
-# Resources: Chunked, embedded content
-resource_id = db.create_resource(
-    content="The quick brown fox...",
-    metadata={"source": "document.pdf", "page": 1}
-)
-
-# Entities: Graph nodes with properties
-entity_id = db.create_entity(
-    type="person",
-    name="John Doe",
-    properties={"role": "engineer", "team": "platform"}
-)
-
-# Moments: Temporal classifications
-moment_id = db.create_moment(
-    timestamp=datetime.now(),
-    type="conversation",
-    resource_refs=[resource_id],
-    entity_refs=[entity_id]
-)
-```
-
-**Focus:**
-- RocksDB key design
-- CRUD operations
-- Tenant scoping
-
-### Phase 2: Vector Search (Days 2-3)
-
-Add HNSW vector index:
-
-```python
-# Add embedding to resource
-db.set_embedding(resource_id, embedding_vector)
-
-# Semantic search
-results = db.search_similar(
-    query_vector=query_embedding,
-    top_k=10,
-    min_score=0.7
-)
-```
-
-**Test:**
-- Use nomic-embed-text-v1.5 (768 dims)
-- 10k vectors, 100k vectors, 1M vectors
-- Measure recall@10, latency
-
-### Phase 3: Predicate Queries (Days 3-4)
-
-Implement SQL-like predicates:
-
-```python
-from rem_db import Query, Predicate
-
-# Simple predicate
-query = Query().filter(
-    Predicate.eq("status", "active")
-).limit(100)
-
-# Complex predicate
-query = Query().filter(
-    Predicate.and_([
-        Predicate.eq("type", "person"),
-        Predicate.in_("team", ["platform", "infra"]),
-        Predicate.gt("created_at", datetime(2024, 1, 1))
-    ])
-).order_by("name", "asc")
-
-entities = db.query_entities(query)
-```
-
-**Test:**
-- 100k entities with various metadata
-- Predicate evaluation performance
-- Composite queries
-
-### Phase 4: Hybrid Search (Days 4-5)
-
-Combine vector + predicate search:
-
-```python
-# Vector search with metadata filtering
-query = Query().filter(
-    Predicate.and_([
-        Predicate.vector_similar(
-            field="embedding",
-            query=query_vector,
-            top_k=50,
-            min_score=0.7
-        ),
-        Predicate.eq("language", "en"),
-        Predicate.in_("tags", ["important", "urgent"])
-    ])
-).limit(10)
-
-results = db.query_resources(query)
-```
-
-**Test:**
-- Compare: vector-first vs predicate-first
-- Measure precision/recall
-- Test with realistic filter selectivity
-
-## Success Criteria
-
-### Must Have
-- ✅ <10ms p50 latency for simple queries
-- ✅ <50ms p50 latency for hybrid search
-- ✅ Complete tenant isolation (no cross-tenant data)
-- ✅ Support 1M+ vectors per tenant
-- ✅ Clean, type-safe Python API
-- ✅ Thread-safe concurrent writes
-
-### Nice to Have
-- ✅ <5ms p50 for indexed predicates
-- ✅ Support 10M+ vectors
-- ✅ Incremental HNSW index building
-- ✅ Batch write optimization
-- ✅ Query explain/profiling
-
-## Implementation Log
-
-### Day 1: RocksDB Setup & Key Design
-
-**Goal:** Basic CRUD operations for Resources, Entities, Moments
-
-**Key Design:**
-
-```python
-# Resource keys
-resource:{tenant_id}:{resource_id} -> Resource JSON
-
-# Entity keys
-entity:{tenant_id}:{entity_id} -> Entity JSON
-
-# Edge keys (for entity graph)
-edge:{tenant_id}:{src_id}:{dst_id}:{edge_type} -> Edge JSON
-
-# Moment keys
-moment:{tenant_id}:{moment_id} -> Moment JSON
-
-# Indexes
-index:entity:{tenant_id}:{field}:{value} -> [entity_ids]
-index:moment:time:{tenant_id}:{timestamp} -> moment_id
-```
-
-**Learnings:**
-- [Document as you build]
-
-### Day 2: Vector Search with HNSW
-
-**Goal:** Add HNSW index for semantic search
-
-**Library Options:**
-1. hnswlib (Python bindings, C++, fast)
-2. faiss (Facebook, comprehensive, complex)
-3. usearch (Rust, modern, fast)
-
-**Chosen:** hnswlib (proven, simple API)
-
-**Implementation:**
-
-```python
-import hnswlib
-
-class VectorIndex:
-    def __init__(self, dim: int, max_elements: int):
-        self.index = hnswlib.Index(space='cosine', dim=dim)
-        self.index.init_index(
-            max_elements=max_elements,
-            ef_construction=200,
-            M=16
-        )
-
-    def add(self, ids: List[int], vectors: np.ndarray):
-        self.index.add_items(vectors, ids)
-
-    def search(self, query: np.ndarray, k: int):
-        labels, distances = self.index.knn_query(query, k=k)
-        return labels, distances
-```
-
-**Benchmarks:**
-- [Add results as you test]
-
-**Learnings:**
-- [Document findings]
-
-### Day 3: Predicate Implementation
-
-**Goal:** SQL-like predicates over entity metadata
-
-**Implementation:**
-
-```python
-@dataclass
-class Predicate:
-    """SQL-like predicate for filtering"""
-
-    @staticmethod
-    def eq(field: str, value: Any) -> "Predicate":
-        """field == value"""
-        ...
-
-    @staticmethod
-    def in_(field: str, values: List[Any]) -> "Predicate":
-        """field IN [values]"""
-        ...
-
-    @staticmethod
-    def and_(predicates: List["Predicate"]) -> "Predicate":
-        """pred1 AND pred2 AND ..."""
-        ...
-
-    def evaluate(self, entity: Entity) -> bool:
-        """Evaluate predicate against entity"""
-        ...
-```
-
-**Learnings:**
-- [Document findings]
-
-### Day 4-5: Hybrid Search
-
-**Goal:** Combine vector search + predicate filtering
-
-**Strategy Options:**
-1. **Vector-first**: Search vectors, then filter results
-2. **Predicate-first**: Filter by predicates, then vector search
-3. **Parallel**: Run both, merge results
-
-**Chosen:** [To be determined based on testing]
-
-**Learnings:**
-- [Document findings]
-
-## Benchmarks
-
-### Setup
-
-- Machine: [Specify specs]
-- Dataset: [Describe test data]
-- Metrics: p50, p95, p99 latency
-
-### Results
-
-#### Simple Predicate Query
-
-```
-Query: entities WHERE type == "person" LIMIT 100
-Dataset: 100k entities
-```
-
-| Operation | p50 | p95 | p99 |
-|-----------|-----|-----|-----|
-| Scan (no index) | TBD | TBD | TBD |
-| With index | TBD | TBD | TBD |
+# REM Database - Resources, Entities, Moments
+
+Fast, embedded RocksDB-based database implementing the REM (Resources-Entities-Moments) memory model with automatic chunking, embeddings, and natural language query interface.
+
+## Overview
+
+REM Database is a **schema-driven entity store** with semantic search capabilities. It combines:
+- **RocksDB** for fast key-value storage
+- **HNSW vector index** for semantic similarity search
+- **Pydantic models** as JSON Schema-based table definitions
+- **Natural language queries** powered by LLM (GPT-4)
+- **Staged iterative queries** combining SQL, vector, and graph operations
+
+**Why Python first?** Rapid iteration on API design before committing to Rust implementation.
+
+## REM Model Explained
+
+### Resources (Chunked Knowledge)
+- **Automatically chunked** embedded documents using semantic chunking
+- Each chunk stored as a separate resource with embeddings
+- Transparent to users - insert a document, get searchable chunks
+- **TODO**: Add Document entity that references its chunks
+
+### Entities (Structured Data)
+- Pydantic models registered as "tables" via JSON Schema
+- All data stored as entities with `type=table_name`
+- Document headers created when data is inserted
+- Properties stored as flexible JSON with schema validation
+
+### Moments (Temporal Classification)
+- **TODO**: Time-based indexing and classification
+- Temporal queries and historical snapshots
+
+## Features Checklist
+
+### ✅ Core Storage & Schema
+
+- [x] **RocksDB backend** - Fast embedded key-value store
+- [x] **Tenant isolation** - Separate databases per tenant
+- [x] **Pydantic models as schemas** - Type-safe table definitions
+- [x] **JSON Schema registry** - Register models with metadata
+- [x] **Schema categories** - System, agents, public, user namespaces
+- [x] **Automatic indexing** - Secondary indexes on specified fields
+- [x] **Soft deletes** - Preserve data with `deleted_at` timestamps
+- [x] **System fields** - id, created_at, modified_at, deleted_at, edges
+
+### ✅ Embeddings & Vector Search
+
+- [x] **Dual embedding support** - Default + alternative embeddings side-by-side
+- [x] **Multiple providers** - Sentence-transformers, OpenAI, Cohere
+- [x] **Provider registry** - Central config for dimensions, metrics
+- [x] **Automatic embedding** - Generate on insert for content/description fields
+- [x] **HNSW vector index** - Fast similarity search with hnswlib
+- [x] **Background worker** - Async embedding generation and index saves
+- [x] **Cosine similarity** - For sentence-transformers models
+- [x] **Inner product** - For normalized embeddings (OpenAI)
+- [x] **Embedding normalization** - Utils for consistent distance metrics
+
+### ✅ Query Interface
+
+#### SQL Queries
+- [x] **SQL SELECT syntax** - Standard SELECT field1, field2 FROM table
+- [x] **WHERE predicates** - =, !=, >, <, >=, <=, IN, AND, OR
+- [x] **Nested conditions** - Parentheses for complex logic
+- [x] **ORDER BY** - ASC/DESC sorting
+- [x] **LIMIT/OFFSET** - Pagination support
+- [x] **Field projection** - SELECT specific columns
+- [x] **Multiline queries** - Support for formatted SQL
+- [x] **Semantic search in SQL** - `WHERE embedding.cosine("query text")`
+- [x] **Vector metrics in SQL** - cosine and inner_product functions
+- [x] **Schema-aware routing** - Query any registered table/entity type
+- [ ] **JOIN support** - Cross-table joins (future)
+- [ ] **Aggregations** - COUNT, SUM, AVG, GROUP BY (future)
 
 #### Vector Search
+- [x] **Semantic similarity** - Natural language concept matching
+- [x] **Score ranking** - Results sorted by similarity
+- [x] **Top-k retrieval** - Configurable result limits
+- [x] **Min score threshold** - Filter low-similarity results
 
+#### Graph Queries
+- [x] **Edge storage** - Directed relationships between entities
+- [x] **Graph traversal** - BFS/DFS algorithms
+- [x] **Relationship filtering** - Filter by edge type
+- [x] **Direction control** - INCOMING, OUTGOING, BOTH
+- [x] **Depth limits** - Prevent infinite traversal
+- [x] **Cycle detection** - Avoid loops in graphs
+- [x] **Path tracking** - Full path with entities and edges
+- [x] **Multi-hop queries** - Find neighbors at exact depth
+- [x] **Shortest path** - BFS-based path finding
+- [x] **All paths** - DFS with backtracking
+
+### ✅ Natural Language Interface
+
+- [x] **LLM-powered query builder** - GPT-4 converts NL to queries
+- [x] **Query type detection** - entity_lookup, sql, vector, hybrid, graph
+- [x] **Entity lookup** - Global search when table unknown (IDs, codes, names)
+- [x] **Confidence scoring** - 0.0-1.0 confidence with explanations
+- [x] **Multi-stage retrieval** - Automatic fallback queries (up to 3 stages)
+- [x] **Schema-aware prompts** - Load entity metadata for accurate queries
+- [x] **CLI command** - `rem-db ask "natural language question"`
+- [x] **Python API** - `db.query_natural_language(query, table)`
+- [ ] **Query caching** - Cache LLM-generated queries (future)
+- [ ] **Alternative LLM providers** - Claude, Llama, local models (future)
+
+### ✅ Staged Iterative Queries
+
+- [x] **Multi-stage patterns** - Combine SQL, vector, graph in sequence
+- [x] **Stage result passing** - Output of one stage feeds next
+- [x] **Semantic → Graph** - Find entities semantically, explore relationships
+- [x] **SQL → Graph** - Filter structurally, traverse connections
+- [x] **Hybrid queries** - Semantic + temporal/metadata filters
+- [x] **Scenario framework** - Test cases for complex query patterns
+- [x] **Performance tracking** - Measure latency per stage
+
+### ✅ CLI Tools
+
+- [x] **Database management**
+  - `rem-db new <name>` - Create new database
+  - `rem-db init` - Initialize with system schemas
+  - `rem-db info` - Show database statistics
+  - `rem-db schemas` - List registered schemas
+
+- [x] **Data operations**
+  - `rem-db insert <table> --data <json>` - Insert entity
+  - `rem-db sql "SELECT ..."` - Execute SQL query
+  - `rem-db query "semantic query"` - Vector similarity search
+  - `rem-db ask "natural language"` - LLM-powered queries
+
+- [x] **Ingestion** (TODO: expand)
+  - File ingestion to Resources table
+  - Automatic chunking with semantic chunker
+  - Batch document processing
+
+### 🚧 Replication & Sync
+
+- [x] **WAL (Write-Ahead Log)** - Sequential operation log
+- [x] **WAL sequence numbers** - Monotonic ordering
+- [x] **WAL persistence** - Stored in RocksDB
+- [x] **WAL API** - `get_wal_entries(start_seq, end_seq, limit)`
+- [ ] **gRPC protocol** - Define replication RPC service
+- [ ] **Peer discovery** - Find and connect to peer nodes
+- [ ] **Bidirectional sync** - Two-way replication
+- [ ] **Multi-peer sync** - 3+ node replication
+- [ ] **Conflict resolution** - Handle concurrent writes
+- [ ] **Incremental catchup** - Sync only new changes
+
+### ✅ Built-in Schemas
+
+**System Entities:**
+- [x] **Resources** - Chunked documents with embeddings
+- [x] **Agents** - Agent-let definitions with output schemas
+- [x] **Sessions** - Conversation/interaction sessions
+- [x] **Messages** - Chat messages with role and content
+
+**Metadata:**
+- System prompt from model docstring
+- FQN, version, category from `model_config.json_schema_extra`
+- MCP tool references
+- Indexed fields for fast queries
+
+### 📋 Planned Features
+
+**Chunking & Embedding:**
+- [ ] Semantic chunking with overlap
+- [ ] Document → Chunks reference tracking
+- [ ] Chunk metadata (position, parent doc)
+- [ ] Multi-document ingestion pipeline
+
+**Query Enhancements:**
+- [ ] JOIN support across tables
+- [ ] Aggregation functions (COUNT, SUM, AVG)
+- [ ] Temporal queries (date ranges, time windows)
+- [ ] Full-text search integration
+- [ ] Query plan visualization
+
+**Replication:**
+- [ ] gRPC bidirectional streaming
+- [ ] Leader election (Raft or similar)
+- [ ] Snapshot + incremental sync
+- [ ] Read replicas
+
+**Storage:**
+- [ ] Compression for large documents
+- [ ] Blob storage for binary data
+- [ ] Multi-tenant sharding
+
+## Quick Start
+
+### Installation
+
+```bash
+# Clone and install
+cd .spikes/rem-db
+uv sync --extra embeddings
+
+# Set up OpenAI API key (for natural language queries)
+export OPENAI_API_KEY='your-key-here'
 ```
-Query: top_k=10, vectors=100k
+
+### Create Database
+
+```bash
+# Create and initialize
+rem-db new mydb
+rem-db init --db mydb
+
+# Check schemas
+rem-db schemas --db mydb
 ```
 
-| Metric | Value |
-|--------|-------|
-| Build time | TBD |
-| Query latency (p50) | TBD |
-| Recall@10 | TBD |
-| Memory usage | TBD |
+### Insert Data
 
-#### Hybrid Search
+```bash
+# Insert a resource
+rem-db insert resources \
+  --data '{"name": "Python Guide", "content": "Learn Python programming..."}' \
+  --db mydb
 
+# Insert custom entity
+rem-db insert agents \
+  --data '{"name": "Code Reviewer", "description": "Reviews code for bugs"}' \
+  --db mydb
 ```
-Query: vector_similar(top_k=50) + eq("language", "en") LIMIT 10
-Dataset: 1M resources, 50% English
+
+### Query Data
+
+```bash
+# SQL query
+rem-db sql "SELECT name FROM resources WHERE category = 'tutorial'" --db mydb
+
+# Vector search
+rem-db query "tutorials about programming" --db mydb
+
+# Natural language
+rem-db ask "find resources about Python" --db mydb
+rem-db ask "what is 12345?" --db mydb  # Entity lookup
 ```
 
-| Strategy | p50 | p95 | Precision |
-|----------|-----|-----|-----------|
-| Vector-first | TBD | TBD | TBD |
-| Predicate-first | TBD | TBD | TBD |
-
-## API Examples
-
-### Resource Operations
+### Python API
 
 ```python
-# Create resource with metadata
-resource = Resource(
-    content="Long document content...",
-    metadata={
-        "source": "document.pdf",
-        "page": 5,
-        "author": "John Doe",
-        "language": "en",
-        "tags": ["important", "technical"]
-    }
-)
-resource_id = db.create_resource(resource)
+from rem_db import REMDatabase
 
-# Add embedding
-embedding = model.encode(resource.content)
-db.set_embedding(resource_id, embedding)
+# Create database
+db = REMDatabase(tenant_id="acme", path="./data")
 
-# Search by metadata
-results = db.query_resources(
-    Query().filter(Predicate.eq("author", "John Doe"))
+# Insert with automatic embedding
+resource_id = db.insert("resources", {
+    "name": "Python Tutorial",
+    "content": "Learn Python from scratch...",
+    "category": "tutorial"
+})
+
+# SQL query
+results = db.sql("SELECT * FROM resources WHERE category = 'tutorial'")
+
+# Vector search
+results = db.sql("""
+    SELECT name FROM resources
+    WHERE embedding.cosine('programming tutorials')
+    LIMIT 10
+""")
+
+# Natural language query
+result = db.query_natural_language(
+    "find tutorials about Python created this month",
+    table="resources"
 )
+print(f"Found {len(result['results'])} resources")
+print(f"Confidence: {result['confidence']:.2f}")
+
+# Entity lookup (global search)
+entities = db.lookup_entity("DHL")  # Brand name
+entities = db.lookup_entity("TAP-1234")  # Ticket code
+entities = db.lookup_entity("12345")  # Numeric ID
+
+# Graph traversal
+from rem_db import Direction
+edges = db.get_edges(entity_id, direction=Direction.INCOMING)
+```
+
+## Schema Registration
+
+### Define Pydantic Model
+
+```python
+from pydantic import BaseModel, ConfigDict, Field
+
+class Project(BaseModel):
+    """A software project."""
+
+    model_config = ConfigDict(
+        json_schema_extra={
+            "fully_qualified_name": "myapp.entities.Project",
+            "version": "1.0.0",
+            "category": "user",
+            "indexed_fields": ["status", "priority"],  # Fast queries
+        }
+    )
+
+    name: str = Field(description="Project name")
+    description: str = Field(description="Project description")
+    status: str = Field(description="Project status")
+    priority: int = Field(ge=1, le=5, description="Priority (1-5)")
+```
+
+### Register and Use
+
+```python
+# Register schema
+db.register_schema(
+    name="projects",
+    model=Project,
+    description="Software project tracker"
+)
+
+# Insert data (automatic validation + embedding)
+project_id = db.insert("projects", {
+    "name": "REM Database",
+    "description": "Fast embedded database with semantic search",
+    "status": "active",
+    "priority": 5
+})
+
+# Query with indexed field (fast)
+results = db.sql("SELECT * FROM projects WHERE status = 'active'")
 
 # Semantic search
-results = db.search_similar(
-    query_vector=query_embedding,
-    top_k=10
-)
-
-# Hybrid search
-results = db.query_resources(
-    Query().filter(
-        Predicate.and_([
-            Predicate.vector_similar(
-                query=query_embedding,
-                top_k=50,
-                min_score=0.7
-            ),
-            Predicate.eq("language", "en"),
-            Predicate.in_("tags", ["important"])
-        ])
-    ).limit(10)
-)
+results = db.sql("""
+    SELECT name FROM projects
+    WHERE embedding.cosine('database search performance')
+    LIMIT 5
+""")
 ```
 
-### Entity Graph Operations
+## Natural Language Query Examples
 
+### Entity Lookup (Unknown Table)
+
+```bash
+# Numeric ID - could be in any table
+rem-db ask "what is 12345?"
+# → Searches all entities by ID/name/alias
+
+# Code pattern
+rem-db ask "find TAP-1234"
+# → Finds ticket/issue with that code
+
+# Brand/entity name
+rem-db ask "tell me about DHL"
+# → Finds carrier entity or related resources
+```
+
+### SQL Queries (Known Table)
+
+```bash
+# Field-based filter
+rem-db ask "show me resources with category tutorial"
+# → SELECT * FROM resources WHERE category = 'tutorial'
+
+# Temporal filter
+rem-db ask "agents created in the last 7 days"
+# → SELECT * FROM agents WHERE created_at >= '...'
+
+# Multiple values
+rem-db ask "resources where status is active or published"
+# → SELECT * FROM resources WHERE status IN ('active', 'published')
+```
+
+### Vector Search (Semantic)
+
+```bash
+# Conceptual query
+rem-db ask "find resources about authentication and security"
+# → SELECT * FROM resources WHERE embedding.cosine('authentication security') LIMIT 10
+
+# Paraphrase
+rem-db ask "tutorials for beginners learning to code"
+# → SELECT * FROM resources WHERE embedding.cosine('tutorials beginners code') LIMIT 10
+```
+
+### Hybrid Queries (Semantic + Filters)
+
+```bash
+# Semantic + temporal
+rem-db ask "Python resources from the last month"
+# → Vector search + created_at filter
+
+# Semantic + category
+rem-db ask "active agents about coding"
+# → Vector search + status filter
+```
+
+### Graph Queries (Multi-Stage)
+
+```bash
+# Relationship exploration
+rem-db ask "who has worked on authentication-related code?"
+# Stage 1: Vector search for auth files
+# Stage 2: Graph traversal via 'authored' edges
+# → Returns: Alice, Bob, Charlie
+```
+
+## Architecture
+
+### Storage Model
+
+```
+RocksDB Key Prefixes:
+├── schema:{tenant}:{name}        → Schema definitions
+├── entity:{tenant}:{uuid}        → All entities (resources, agents, etc.)
+├── edge:{tenant}:{src}:{dst}     → Graph relationships
+├── index:{field}:{tenant}:{val}  → Secondary indexes
+├── wal:{tenant}:seq              → WAL sequence number
+└── wal:{tenant}:entry:{seq}      → WAL entries for replication
+```
+
+### Entity Storage (Unified)
+
+**All tables stored as entities:**
 ```python
-# Create entities
-person_id = db.create_entity(
-    type="person",
-    name="Alice",
-    properties={"role": "engineer"}
-)
-
-project_id = db.create_entity(
-    type="project",
-    name="Percolate",
-    properties={"status": "active"}
-)
-
-# Create relationship
-db.create_edge(
-    src=person_id,
-    dst=project_id,
-    edge_type="works_on",
-    properties={"since": "2024-01-01"}
-)
-
-# Query graph
-related = db.traverse(
-    start=person_id,
-    edge_type="works_on",
-    direction="outgoing",
-    max_depth=2
-)
-
-# Complex entity query
-engineers = db.query_entities(
-    Query().filter(
-        Predicate.and_([
-            Predicate.eq("type", "person"),
-            Predicate.eq("role", "engineer"),
-            Predicate.exists("team")
-        ])
-    ).order_by("name", "asc")
-)
+entity:{tenant}:{uuid} → {
+    "id": "uuid",
+    "type": "resources",  # Table/schema name
+    "name": "Python Guide",
+    "properties": {
+        "content": "...",
+        "category": "tutorial",
+        "metadata": {"status": "active"}
+    },
+    "embedding": [0.1, 0.2, ...],  # Default (384-dim)
+    "embedding_alt": [0.3, 0.4, ...],  # Alternative (768-dim)
+    "created_at": "2025-10-24T...",
+    "modified_at": "2025-10-24T...",
+    "deleted_at": null
+}
 ```
 
-### Moment Queries
+### Query Routing
 
-```python
-# Create moment
-moment = db.create_moment(
-    timestamp=datetime.now(),
-    type="conversation",
-    classifications=["technical", "planning"],
-    resource_refs=[resource_id],
-    entity_refs=[person_id, project_id],
-    metadata={"duration_minutes": 30}
-)
-
-# Query moments by time
-recent = db.query_moments(
-    Query().filter(
-        Predicate.gte("timestamp", datetime.now() - timedelta(days=7))
-    ).order_by("timestamp", "desc")
-)
-
-# Query moments by type
-conversations = db.query_moments(
-    Query().filter(Predicate.eq("type", "conversation"))
-)
+```
+SQL: SELECT * FROM resources WHERE category = 'tutorial'
+  ↓
+1. Load schema for "resources"
+2. Filter entities by type='resources'
+3. Apply WHERE predicates
+4. Project fields
+  ↓
+Results: [{name: "...", category: "tutorial"}, ...]
 ```
 
-## Key Learnings
+### Natural Language Flow
 
-### What Worked Well
+```
+User: "find resources about Python"
+  ↓
+LLM Query Builder (with schema context)
+  ↓
+Generated Query: SELECT * FROM resources WHERE embedding.cosine('Python') LIMIT 10
+  ↓
+Vector Search (HNSW)
+  ↓
+Results: [{name: "Python Guide", _score: 0.87}, ...]
+```
 
-- [Document successes]
+## Performance
 
-### What Didn't Work
+### Benchmarks (Python Implementation)
 
-- [Document failures and why]
+- **Vector search**: ~1ms p50 (HNSW, 384-dim)
+- **Indexed SQL queries**: ~50ms p50 (44% faster than full scan)
+- **Entity lookup**: <1ms (direct key lookup)
+- **Embedding generation**: ~10-50ms (sentence-transformers, CPU)
+- **Natural language query**: 1-3s (includes LLM API call)
 
-### Performance Surprises
+### Optimization
 
-- [Document unexpected findings]
+- **Indexes**: 2-5x faster for equality queries
+- **Vector search**: Sub-millisecond with HNSW
+- **Background workers**: Non-blocking embedding generation
+- **Batch operations**: Amortize RocksDB write overhead
 
-### API Ergonomics
+## Testing
 
-- [What felt natural vs awkward?]
+```bash
+# Unit tests
+uv run pytest tests/unit/ -v
 
-## Recommendation for Rust Port
+# Integration tests
+uv run pytest tests/integration/ -v
 
-### Core Design to Keep
+# Problem set evaluation
+uv run python examples/populate_problem_set_data.py
+uv run python examples/test_entity_lookup.py
+uv run python examples/test_sql_queries.py
 
-- [What should we preserve in Rust version?]
+# Benchmarks
+uv run pytest tests/test_performance.py --benchmark-only
+```
 
-### Changes to Make
+## Documentation
 
-- [What should we do differently in Rust?]
+### Planning and testing
+- **Problem Set**: `01 - problem-set.md` - 10 query evaluation questions
+- **Replication**: `02 - replication.md` - Replication design and WAL
+- **Staged Query Planning**: `scenarios.md` - Multi-modal query composition (Resources-Entities-Moments)
+- **Aggregations & Joins**: `aggregations-joins.md` - SQL query planning with SQLGlot, DuckDB, DataFusion
+- **DuckDB vs DataFusion**: `duckdb-datafusion-strategy.md` - Index storage strategy and Rust migration path
+- **DataFusion Analysis**: `datafusion-analysis.md` - Does DataFusion solve our problems? Performance analysis & recommendations
+- **Analytics Export**: `analytics-export-strategy.md` - **RECOMMENDED**: Cached snapshots → DuckDB for analytics (simple, pragmatic)
+- **Changelog**: `changelog.md` - Feature history
 
-### Performance Targets
+### Implementation details
+Implementation documentation is in source code module docstrings:
+- **Embeddings**: `src/rem_db/embeddings.py` - Dual embedding system, provider registry
+- **Natural Language**: `src/rem_db/llm_query_builder.py` - LLM query builder, multi-stage retrieval
+- **Async Worker**: `src/rem_db/worker.py` - Background thread, task queue, index persistence
+- **Database Core**: `src/rem_db/database.py` - Entity storage, SQL, vector search, graph
+- **SQL Parser**: `src/rem_db/sql.py` - SQL syntax with semantic similarity functions
 
-- [What should Rust version achieve?]
+## Examples
 
-## Open Questions
+```bash
+examples/
+├── populate_problem_set_data.py   # Test data generator
+├── test_entity_lookup.py          # Entity lookup validation
+├── test_sql_queries.py            # SQL query tests
+├── graph_traversal.py             # Graph query examples
+├── nested_agentlets.py            # Complex nested schemas
+├── carrier_agentlet_pattern.py    # Agent-let pattern demo
+└── experiment_1_software.py       # End-to-end scenario
+```
 
-- [ ] How do we handle schema migrations?
-- [ ] Should we support transactions?
-- [ ] How do we backup/restore efficiently?
-- [ ] What's the best way to version REM database format?
-- [ ] How do we handle index rebuilding on schema changes?
+## Roadmap
 
-## Next Steps
+**Q1 2025:**
+- [ ] gRPC replication protocol
+- [ ] Semantic chunking pipeline
+- [ ] Document → Chunks tracking
+- [ ] SQL JOIN support
 
-1. **If spike successful:** Create `docs/components/rem-database.md` with clean spec
-2. **Port to Rust:** Implement in `percolate-rust/src/memory/`
-3. **Add tests:** Comprehensive test suite based on spike findings
-4. **Benchmark:** Compare Rust vs Python performance
-5. **Archive spike:** Move to `.spikes/archived/rem-db-YYYYMMDD`
+**Q2 2025:**
+- [ ] Rust port of core engine
+- [ ] Multi-peer replication
+- [ ] Read replicas
+- [ ] Compression & blob storage
 
-## References
+**Q3 2025:**
+- [ ] Moments implementation (temporal)
+- [ ] Query plan visualization
+- [ ] Alternative LLM providers
+- [ ] Production deployment tooling
 
-- RocksDB docs: https://github.com/facebook/rocksdb/wiki
-- hnswlib: https://github.com/nmslib/hnswlib
-- Query layer design: `docs/components/query-layer.md`
-- REM memory spec: `docs/02-rem-memory.md`
+## Contributing
+
+This is a spike/prototype for rapid iteration. Key principles:
+
+1. **Everything is an entity** - No hardcoded table types
+2. **Schema-driven** - Pydantic models define behavior
+3. **Natural language first** - LLM understands schemas
+4. **Performance matters** - Measure before optimizing
+5. **Test with scenarios** - Real-world query patterns
+
+## License
+
+MIT

@@ -361,6 +361,21 @@ percolation/
 | **Auth** | Mobile-first OAuth 2.1 | OIDC optional | Mobile + cryptographic |
 | **Target** | Individuals | Enterprises | Research |
 
+## Documentation
+
+### Core Docs
+
+- [System Overview](percolate/docs/00-overview.md) - Architecture and components
+- [Testing](percolate/docs/01-testing.md) - Test organization and best practices
+- [Agent-lets](percolate/docs/02-agentlets.md) - Agent-let patterns and versioning
+- [Authentication](percolate/docs/03-auth.md) - OAuth 2.1 and security
+- [MCP Protocol](percolate/docs/04-mcp.md) - Model Context Protocol implementation
+- [Evaluations](percolate/docs/05-evals.md) - Evaluation framework and metrics
+
+### Development
+
+- [Coding Standards](claude.md) - Development principles and patterns
+
 ## Status
 
 **Current Phase**: Foundation & Architecture
@@ -370,8 +385,6 @@ This project is in the initial design phase. We are:
 2. Setting up project structure (Python + Rust)
 3. Documenting architecture decisions
 4. Planning implementation roadmap
-
-See `docs/` for detailed component designs and `Claude.md` for coding standards.
 
 ## Cloud Deployment
 
@@ -398,48 +411,12 @@ Gateway → Tier A Deployment (2-50 pods)
 - Tier-aware routing with consistent hashing
 - Cost optimization: 74% margin at 1,000+ tenants
 
-See `docs/07-multi-tenant-allocation.md` for complete specification.
+See cloud deployment docs for complete specification.
 
 ## References
 
-- **Carrier**: `/Users/sirsh/code/tribe/carrier` - Agent-let framework and evaluation patterns
-- **P8FS-Modules**: `/Users/sirsh/code/p8fs-modules` - Authentication and memory research
 - **Pydantic AI**: https://ai.pydantic.dev - Agent framework
 - **FastMCP**: https://github.com/jlowin/fastmcp - MCP implementation
 - **OAuth 2.1**: https://oauth.net/2.1/ - Modern OAuth standard
-
-## Query Layer
-
-REM provides a **SQL-like predicate interface** for expressive queries over RocksDB:
-
-```python
-from percolate_rust import Query, Predicate
-
-# Find active entities with vector search
-query = (Query()
-    .filter(Predicate.vector_similar(
-        field="embedding",
-        query=embedding_vector,
-        top_k=20,
-        min_score=0.7
-    ))
-    .filter(Predicate.eq("status", "active"))
-    .filter(Predicate.in_("tags", ["important", "urgent"]))
-    .order_by("created_at", "desc")
-    .limit(10))
-
-results = memory.query_resources(query)
-```
-
-**Supported Predicates:**
-
-- **Comparison**: `eq`, `ne`, `gt`, `gte`, `lt`, `lte`
-- **Set**: `in_`, `not_in`
-- **String**: `contains`, `starts_with`, `ends_with`, `matches` (regex)
-- **Logical**: `and_`, `or_`, `not_`
-- **Vector**: `vector_similar` (semantic search with filters)
-- **Existence**: `exists`, `not_exists`
-
-**Performance:** Predicates are pushed down to RocksDB scan level for efficiency. Secondary indexes can be created for frequently queried fields.
-
-See `docs/components/query-layer.md` for complete reference.
+- **RocksDB**: https://rocksdb.org - Embedded database
+- **PyO3**: https://pyo3.rs - Python/Rust bindings

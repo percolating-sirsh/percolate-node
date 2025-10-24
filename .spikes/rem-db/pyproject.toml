@@ -12,14 +12,27 @@ dependencies = [
     "numpy>=1.26.0",
     "pydantic>=2.0.0",
     "orjson>=3.9.0",  # Fast JSON serialization
+    "typer>=0.9.0",   # CLI framework
+    "rich>=13.0.0",   # Rich terminal output
+    "httpx>=0.27.0",  # HTTP client for LLM API
+    "grpcio>=1.60.0",  # gRPC runtime
+    "grpcio-tools>=1.60.0",  # Protobuf compiler
+    "protobuf>=4.25.0",  # Protocol buffers
 ]
+
+[project.scripts]
+rem-db = "rem_db.cli:main"
 
 [project.optional-dependencies]
 dev = [
     "pytest>=8.0.0",
+    "pytest-asyncio>=0.23.0",  # For async tests
     "pytest-benchmark>=4.0.0",
-    "sentence-transformers>=2.0.0",  # For testing embeddings
     "ipython>=8.0.0",
+]
+embeddings = [
+    "sentence-transformers>=2.0.0",
+    "torch>=2.0.0",
 ]
 
 [build-system]
