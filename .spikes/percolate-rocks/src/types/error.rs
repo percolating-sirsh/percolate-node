@@ -132,7 +132,10 @@ impl DatabaseError {
     ///
     /// `true` if operation can be retried, `false` otherwise
     pub fn is_recoverable(&self) -> bool {
-        todo!("Implement DatabaseError::is_recoverable")
+        matches!(
+            self,
+            Self::HttpError(_) | Self::ReplicationError(_) | Self::GrpcError(_)
+        )
     }
 }
 
@@ -142,11 +145,40 @@ mod tests {
 
     #[test]
     fn test_error_creation() {
-        // TODO: Test error creation and messages
+        let uuid = Uuid::new_v4();
+        let err = DatabaseError::EntityNotFound(uuid);
+        assert_eq!(err.to_string(), format!("Entity not found: {}", uuid));
+
+        let err = DatabaseError::validation("Invalid field");
+        assert_eq!(err.to_string(), "Schema validation failed: Invalid field");
+
+        let err = DatabaseError::query("Parse failed");
+        assert_eq!(err.to_string(), "Query execution failed: Parse failed");
     }
 
     #[test]
     fn test_error_from_conversions() {
-        // TODO: Test automatic From conversions
+        // Test JSON error conversion
+        let json_err = serde_json::from_str::<serde_json::Value>("invalid json");
+        assert!(json_err.is_err());
+        let db_err: DatabaseError = json_err.unwrap_err().into();
+        assert!(matches!(db_err, DatabaseError::JsonError(_)));
+
+        // Test I/O error conversion
+        let io_err = std::io::Error::new(std::io::ErrorKind::NotFound, "file not found");
+        let db_err: DatabaseError = io_err.into();
+        assert!(matches!(db_err, DatabaseError::IoError(_)));
+    }
+
+    #[test]
+    fn test_is_recoverable() {
+        let recoverable = DatabaseError::ReplicationError("network timeout".to_string());
+        assert!(recoverable.is_recoverable());
+
+        let non_recoverable = DatabaseError::ValidationError("invalid schema".to_string());
+        assert!(!non_recoverable.is_recoverable());
+
+        let non_recoverable = DatabaseError::EntityNotFound(Uuid::new_v4());
+        assert!(!non_recoverable.is_recoverable());
     }
 }
