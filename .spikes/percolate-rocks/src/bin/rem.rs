@@ -353,9 +353,38 @@ fn cmd_get(db_path: &PathBuf, uuid_str: &str) -> anyhow::Result<()> {
 }
 
 fn cmd_lookup(db_path: &PathBuf, key: &str) -> anyhow::Result<()> {
-    println!("Global key lookup not yet implemented");
-    println!("Would search for key: {}", key);
-    println!("Requires: key_index column family scan with prefix: key:*:{}:*", key);
+    let db = Database::open(db_path)?;
+
+    // Get all schemas to search across
+    let schemas = db.list_schemas()?;
+
+    println!("Looking up key: {}", key);
+    println!();
+
+    let mut found = false;
+
+    // Search each schema for the key
+    for schema_name in schemas {
+        if let Some(entity) = db.get_by_key("default", &schema_name, key)? {
+            found = true;
+            println!("✓ Found in table: {}", schema_name);
+            println!("  ID: {}", entity.system.id);
+            println!("  Created: {}", entity.system.created_at);
+            println!("  Modified: {}", entity.system.modified_at);
+            println!("  Properties:");
+
+            let formatted = serde_json::to_string_pretty(&entity.properties)?;
+            for line in formatted.lines() {
+                println!("    {}", line);
+            }
+            println!();
+        }
+    }
+
+    if !found {
+        println!("✗ No entity found with key: {}", key);
+    }
+
     Ok(())
 }
 
