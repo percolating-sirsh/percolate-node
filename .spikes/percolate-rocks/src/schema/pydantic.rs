@@ -43,7 +43,16 @@ impl PydanticSchemaParser {
     ///
     /// Vector of field names to embed
     pub fn extract_embedding_fields(schema: &serde_json::Value) -> Vec<String> {
-        todo!("Implement PydanticSchemaParser::extract_embedding_fields")
+        schema
+            .get("json_schema_extra")
+            .and_then(|extra| extra.get("embedding_fields"))
+            .and_then(|fields| fields.as_array())
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|v| v.as_str().map(String::from))
+                    .collect()
+            })
+            .unwrap_or_default()
     }
 
     /// Extract `indexed_fields` from schema.
@@ -56,7 +65,16 @@ impl PydanticSchemaParser {
     ///
     /// Vector of field names to index
     pub fn extract_indexed_fields(schema: &serde_json::Value) -> Vec<String> {
-        todo!("Implement PydanticSchemaParser::extract_indexed_fields")
+        schema
+            .get("json_schema_extra")
+            .and_then(|extra| extra.get("indexed_fields"))
+            .and_then(|fields| fields.as_array())
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|v| v.as_str().map(String::from))
+                    .collect()
+            })
+            .unwrap_or_default()
     }
 
     /// Extract `key_field` from schema.
@@ -69,7 +87,11 @@ impl PydanticSchemaParser {
     ///
     /// Key field name if configured
     pub fn extract_key_field(schema: &serde_json::Value) -> Option<String> {
-        todo!("Implement PydanticSchemaParser::extract_key_field")
+        schema
+            .get("json_schema_extra")
+            .and_then(|extra| extra.get("key_field"))
+            .and_then(|v| v.as_str())
+            .map(String::from)
     }
 
     /// Extract `fully_qualified_name` from schema.
@@ -82,7 +104,11 @@ impl PydanticSchemaParser {
     ///
     /// Fully qualified name if present
     pub fn extract_fqn(schema: &serde_json::Value) -> Option<String> {
-        todo!("Implement PydanticSchemaParser::extract_fqn")
+        schema
+            .get("json_schema_extra")
+            .and_then(|extra| extra.get("name"))
+            .and_then(|v| v.as_str())
+            .map(String::from)
     }
 
     /// Extract embedding provider config.
@@ -95,7 +121,11 @@ impl PydanticSchemaParser {
     ///
     /// Embedding provider config if present
     pub fn extract_embedding_provider(schema: &serde_json::Value) -> Option<String> {
-        todo!("Implement PydanticSchemaParser::extract_embedding_provider")
+        schema
+            .get("json_schema_extra")
+            .and_then(|extra| extra.get("embedding_provider"))
+            .and_then(|v| v.as_str())
+            .map(String::from)
     }
 
     /// Extract MCP tools from agent-let schema.
@@ -124,7 +154,16 @@ impl PydanticSchemaParser {
     /// }
     /// ```
     pub fn extract_tools(schema: &serde_json::Value) -> Vec<ToolConfig> {
-        todo!("Implement PydanticSchemaParser::extract_tools")
+        schema
+            .get("json_schema_extra")
+            .and_then(|extra| extra.get("tools"))
+            .and_then(|tools| tools.as_array())
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|v| serde_json::from_value(v.clone()).ok())
+                    .collect()
+            })
+            .unwrap_or_default()
     }
 
     /// Extract MCP resources from agent-let schema.
@@ -152,7 +191,16 @@ impl PydanticSchemaParser {
     /// }
     /// ```
     pub fn extract_resources(schema: &serde_json::Value) -> Vec<ResourceConfig> {
-        todo!("Implement PydanticSchemaParser::extract_resources")
+        schema
+            .get("json_schema_extra")
+            .and_then(|extra| extra.get("resources"))
+            .and_then(|resources| resources.as_array())
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|v| serde_json::from_value(v.clone()).ok())
+                    .collect()
+            })
+            .unwrap_or_default()
     }
 
     /// Extract category from schema.
@@ -175,7 +223,12 @@ impl PydanticSchemaParser {
     /// }
     /// ```
     pub fn extract_category(schema: &serde_json::Value) -> SchemaCategory {
-        todo!("Implement PydanticSchemaParser::extract_category")
+        schema
+            .get("json_schema_extra")
+            .and_then(|extra| extra.get("category"))
+            .and_then(|v| v.as_str())
+            .and_then(SchemaCategory::from_str)
+            .unwrap_or_default()
     }
 
     /// Extract version from schema.
@@ -192,7 +245,10 @@ impl PydanticSchemaParser {
     ///
     /// Version is required in all schemas.
     pub fn extract_version(schema: &serde_json::Value) -> Option<String> {
-        todo!("Implement PydanticSchemaParser::extract_version")
+        schema
+            .get("version")
+            .and_then(|v| v.as_str())
+            .map(String::from)
     }
 
     /// Extract short name from schema.
@@ -205,7 +261,10 @@ impl PydanticSchemaParser {
     ///
     /// Short name (table name) if present
     pub fn extract_short_name(schema: &serde_json::Value) -> Option<String> {
-        todo!("Implement PydanticSchemaParser::extract_short_name")
+        schema
+            .get("short_name")
+            .and_then(|v| v.as_str())
+            .map(String::from)
     }
 
     /// Extract description from schema.
@@ -218,7 +277,10 @@ impl PydanticSchemaParser {
     ///
     /// Schema description (required for all schemas)
     pub fn extract_description(schema: &serde_json::Value) -> Option<String> {
-        todo!("Implement PydanticSchemaParser::extract_description")
+        schema
+            .get("description")
+            .and_then(|v| v.as_str())
+            .map(String::from)
     }
 
     /// Check if schema is an agent-let.
@@ -231,7 +293,21 @@ impl PydanticSchemaParser {
     ///
     /// `true` if schema has tools or resources configured
     pub fn is_agentlet(schema: &serde_json::Value) -> bool {
-        todo!("Implement PydanticSchemaParser::is_agentlet")
+        let has_tools = schema
+            .get("json_schema_extra")
+            .and_then(|extra| extra.get("tools"))
+            .and_then(|v| v.as_array())
+            .map(|arr| !arr.is_empty())
+            .unwrap_or(false);
+
+        let has_resources = schema
+            .get("json_schema_extra")
+            .and_then(|extra| extra.get("resources"))
+            .and_then(|v| v.as_array())
+            .map(|arr| !arr.is_empty())
+            .unwrap_or(false);
+
+        has_tools || has_resources
     }
 }
 
