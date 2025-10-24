@@ -21,6 +21,9 @@ pub mod export;
 pub mod ingest;
 pub mod llm;
 
+// High-level database API
+pub mod database;
+
 #[cfg(feature = "python")]
 pub mod bindings;
 

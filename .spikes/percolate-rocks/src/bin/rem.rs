@@ -3,9 +3,8 @@
 //! Command-line interface for Resources-Entities-Moments database.
 
 use clap::{Parser, Subcommand};
-use percolate_rocks::{storage::Storage, types::Entity};
+use percolate_rocks::database::Database;
 use std::path::PathBuf;
-use uuid::Uuid;
 
 /// REM Database CLI - Resources-Entities-Moments
 #[derive(Parser)]
@@ -292,12 +291,13 @@ fn cmd_init(path: &PathBuf) -> anyhow::Result<()> {
     std::fs::create_dir_all(path)?;
 
     // Open database (will create if doesn't exist)
-    let _storage = Storage::open(path)?;
+    let db = Database::open(path)?;
 
     println!("✓ Database initialized successfully");
     println!("  Path: {}", path.display());
     println!("  Column families: 7");
-    println!("  Ready for schema registration");
+    println!("  Builtin schemas: {}", db.list_schemas()?.len());
+    println!("  Ready for use");
 
     Ok(())
 }
@@ -308,7 +308,7 @@ fn cmd_insert(
     json: Option<&str>,
     batch: bool,
 ) -> anyhow::Result<()> {
-    let storage = Storage::open(db_path)?;
+    let db = Database::open(db_path)?;
 
     if batch {
         println!("Batch insert not yet implemented");
@@ -320,26 +320,12 @@ fn cmd_insert(
         // Parse JSON
         let data: serde_json::Value = serde_json::from_str(json_data)?;
 
-        // Create entity (simplified - needs schema validation)
-        let id = Uuid::new_v4();
-        let entity = Entity::new(id, table.to_string(), data);
-
-        // Serialize and store
-        let key = percolate_rocks::storage::keys::encode_entity_key("default", id);
-        let value = serde_json::to_vec(&entity)?;
-
-        storage.put(
-            percolate_rocks::storage::column_families::CF_ENTITIES,
-            &key,
-            &value,
-        )?;
+        // Insert entity (with schema validation)
+        let id = db.insert("default", table, data)?;
 
         println!("✓ Inserted entity");
         println!("  ID: {}", id);
         println!("  Table: {}", table);
-
-        // Pretty print the entity
-        println!("\n{}", serde_json::to_string_pretty(&entity)?);
     } else {
         anyhow::bail!("Either provide JSON data or use --batch flag");
     }
@@ -348,23 +334,14 @@ fn cmd_insert(
 }
 
 fn cmd_get(db_path: &PathBuf, uuid_str: &str) -> anyhow::Result<()> {
-    let storage = Storage::open(db_path)?;
+    let db = Database::open(db_path)?;
 
     // Parse UUID
-    let id = Uuid::parse_str(uuid_str)?;
+    let id = uuid::Uuid::parse_str(uuid_str)?;
 
-    // Encode key
-    let key = percolate_rocks::storage::keys::encode_entity_key("default", id);
-
-    // Get from storage
-    let value = storage.get(
-        percolate_rocks::storage::column_families::CF_ENTITIES,
-        &key,
-    )?;
-
-    match value {
-        Some(data) => {
-            let entity: Entity = serde_json::from_slice(&data)?;
+    // Get entity
+    match db.get("default", id)? {
+        Some(entity) => {
             println!("{}", serde_json::to_string_pretty(&entity)?);
         }
         None => {
@@ -387,38 +364,100 @@ fn cmd_lookup(db_path: &PathBuf, key: &str) -> anyhow::Result<()> {
 // ============================================================================
 
 fn cmd_schema_add(
-    _db_path: &PathBuf,
+    db_path: &PathBuf,
     file: Option<PathBuf>,
     name: Option<String>,
     template: Option<String>,
     output: Option<PathBuf>,
 ) -> anyhow::Result<()> {
-    println!("Schema add not yet implemented");
-    if let Some(f) = file {
-        println!("  File: {}", f.display());
+    let db = Database::open(db_path)?;
+
+    // Handle file-based schema registration
+    if let Some(schema_file) = file {
+        let content = std::fs::read_to_string(&schema_file)?;
+        let schema: serde_json::Value = if schema_file.extension().and_then(|s| s.to_str()) == Some("yaml")
+            || schema_file.extension().and_then(|s| s.to_str()) == Some("yml") {
+            // Parse YAML
+            serde_yaml::from_str(&content)?
+        } else {
+            // Parse JSON
+            serde_json::from_str(&content)?
+        };
+
+        // Extract schema name
+        let schema_name = schema.get("short_name")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| anyhow::anyhow!("Schema missing 'short_name' field"))?
+            .to_string();
+
+        // Register schema
+        db.register_schema(&schema_name, schema)?;
+
+        println!("✓ Schema registered: {}", schema_name);
+        println!("  File: {}", schema_file.display());
+
+        return Ok(());
     }
-    if let Some(n) = name {
-        println!("  Name: {}", n);
+
+    // Handle template-based schema creation
+    if let Some(template_name) = template {
+        let schema_name = name.ok_or_else(|| anyhow::anyhow!("--name required when using --template"))?;
+
+        // Get template schema (only builtin templates supported for now)
+        let template_schema = match template_name.as_str() {
+            "resources" => percolate_rocks::schema::builtin::resources_table_schema(),
+            "documents" => percolate_rocks::schema::builtin::documents_table_schema(),
+            "schemas" => percolate_rocks::schema::builtin::schemas_table_schema(),
+            _ => anyhow::bail!("Unknown template: {} (available: resources, documents, schemas)", template_name),
+        };
+
+        // Customize schema with new name
+        let mut schema = template_schema.clone();
+        if let Some(obj) = schema.as_object_mut() {
+            obj.insert("short_name".to_string(), serde_json::Value::String(schema_name.clone()));
+            if let Some(extra) = obj.get_mut("json_schema_extra").and_then(|v| v.as_object_mut()) {
+                extra.insert("category".to_string(), serde_json::Value::String("user".to_string()));
+            }
+        }
+
+        // Output to file or register
+        if let Some(output_file) = output {
+            let content = serde_json::to_string_pretty(&schema)?;
+            std::fs::write(&output_file, content)?;
+            println!("✓ Schema saved to: {}", output_file.display());
+            println!("  Template: {}", template_name);
+            println!("  Name: {}", schema_name);
+        } else {
+            // Register directly
+            db.register_schema(&schema_name, schema)?;
+            println!("✓ Schema registered: {}", schema_name);
+            println!("  Template: {}", template_name);
+        }
+
+        return Ok(());
     }
-    if let Some(t) = template {
-        println!("  Template: {}", t);
+
+    anyhow::bail!("Either provide a schema file or use --template with --name")
+}
+
+fn cmd_schema_list(db_path: &PathBuf) -> anyhow::Result<()> {
+    let db = Database::open(db_path)?;
+    let schemas = db.list_schemas()?;
+
+    println!("Registered schemas ({}):", schemas.len());
+    for name in schemas {
+        println!("  - {}", name);
     }
-    if let Some(o) = output {
-        println!("  Output: {}", o.display());
-    }
-    println!("\nRequires: schema registry, JSON Schema validation");
+
     Ok(())
 }
 
-fn cmd_schema_list(_db_path: &PathBuf) -> anyhow::Result<()> {
-    println!("Schema list not yet implemented");
-    println!("Requires: schema registry");
-    Ok(())
-}
+fn cmd_schema_show(db_path: &PathBuf, name: &str) -> anyhow::Result<()> {
+    let db = Database::open(db_path)?;
+    let schema = db.get_schema(name)?;
 
-fn cmd_schema_show(_db_path: &PathBuf, name: &str) -> anyhow::Result<()> {
-    println!("Schema show not yet implemented: {}", name);
-    println!("Requires: schema registry");
+    println!("{}", serde_json::to_string_pretty(&schema)?);
+
     Ok(())
 }
 
