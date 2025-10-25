@@ -1,9 +1,6 @@
 name: Build percolate-rocks (PyPI)
 
 on:
-  push:
-    tags:
-      - 'percolate-rocks-v[0-9]+.[0-9]+.[0-9]+-rc*'
   workflow_call:
 
 env:
@@ -19,45 +16,28 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Extract version from tag
+      - name: Extract and validate version
         id: check
         run: |
-          TAG_NAME="${GITHUB_REF_NAME}"
-          echo "🔍 Checking tag: $TAG_NAME"
+          echo "🔍 Validating percolate-rocks version..."
 
-          # Validate RC tag format
-          if ! echo "$TAG_NAME" | grep -qE '^percolate-rocks-v[0-9]+\.[0-9]+\.[0-9]+-rc[0-9]+$'; then
-            echo "❌ Invalid tag format. Expected: percolate-rocks-v0.2.0-rc1"
-            exit 1
-          fi
-
-          # Extract version (strip prefix and rc suffix)
-          VERSION=$(echo "$TAG_NAME" | sed -E 's/^percolate-rocks-v([0-9]+\.[0-9]+\.[0-9]+)-rc[0-9]+$/\1/')
-          echo "📦 Extracted version: ${VERSION}"
-
-          # Verify version matches Cargo.toml
+          # Get versions from both files
           CARGO_VERSION=$(grep '^version = ' ${{ env.PROJECT_DIR }}/Cargo.toml | cut -d'"' -f2)
-          echo "📄 Cargo.toml version: ${CARGO_VERSION}"
-
-          if [ "$VERSION" != "$CARGO_VERSION" ]; then
-            echo "❌ Version mismatch!"
-            echo "   Tag version: ${VERSION}"
-            echo "   Cargo.toml:  ${CARGO_VERSION}"
-            exit 1
-          fi
-
-          # Verify pyproject.toml matches too
           PYPROJECT_VERSION=$(grep '^version = ' ${{ env.PROJECT_DIR }}/pyproject.toml | cut -d'"' -f2)
+
+          echo "📄 Cargo.toml version:    ${CARGO_VERSION}"
           echo "📄 pyproject.toml version: ${PYPROJECT_VERSION}"
 
-          if [ "$VERSION" != "$PYPROJECT_VERSION" ]; then
-            echo "❌ Version mismatch!"
-            echo "   Tag version:      ${VERSION}"
-            echo "   pyproject.toml:   ${PYPROJECT_VERSION}"
+          # Verify both files have same version
+          if [ "$CARGO_VERSION" != "$PYPROJECT_VERSION" ]; then
+            echo "❌ Version mismatch between Cargo.toml and pyproject.toml!"
+            echo "   Cargo.toml:    ${CARGO_VERSION}"
+            echo "   pyproject.toml: ${PYPROJECT_VERSION}"
             exit 1
           fi
 
-          echo "✅ Version validation passed"
+          VERSION="$CARGO_VERSION"
+          echo "✅ Version validation passed: v${VERSION}"
           echo "should_build=true" >> $GITHUB_OUTPUT
           echo "version=${VERSION}" >> $GITHUB_OUTPUT
 

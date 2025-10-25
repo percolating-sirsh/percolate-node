@@ -2,8 +2,13 @@ name: Build All (Orchestrator)
 
 on:
   push:
-    tags:
-      - '*-v[0-9]+.[0-9]+.[0-9]+-rc*'
+    branches:
+      - main
+    paths:
+      - 'percolate-rocks/Cargo.toml'
+      - 'percolate-rocks/pyproject.toml'
+      - 'percolate/pyproject.toml'
+      - 'percolate-reading/pyproject.toml'
 
 jobs:
   detect-changes:
@@ -17,36 +22,59 @@ jobs:
       reading_version: ${{ steps.detect.outputs.reading_version }}
 
     steps:
-      - name: Detect what changed
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2  # Need previous commit to compare
+
+      - name: Detect version bumps
         id: detect
         run: |
-          TAG="${GITHUB_REF_NAME}"
-          echo "🏷️  Tag: $TAG"
+          echo "🔍 Detecting version changes..."
 
           # Initialize outputs
           ROCKS_CHANGED=false
           PERCOLATE_CHANGED=false
           READING_CHANGED=false
 
-          # Check percolate-rocks
-          if echo "$TAG" | grep -qE '^percolate-rocks-v[0-9]+\.[0-9]+\.[0-9]+-rc[0-9]+$'; then
-            ROCKS_CHANGED=true
-            ROCKS_VERSION=$(echo "$TAG" | sed -E 's/^percolate-rocks-v([0-9]+\.[0-9]+\.[0-9]+)-rc[0-9]+$/\1/')
-            echo "📦 percolate-rocks: v${ROCKS_VERSION}"
+          # Check percolate-rocks (Cargo.toml)
+          if git diff HEAD~1 HEAD -- percolate-rocks/Cargo.toml | grep -q '^+version'; then
+            ROCKS_VERSION=$(grep '^version = ' percolate-rocks/Cargo.toml | cut -d'"' -f2)
+            PREV_ROCKS=$(git show HEAD~1:percolate-rocks/Cargo.toml | grep '^version = ' | cut -d'"' -f2)
+            if [ "$ROCKS_VERSION" != "$PREV_ROCKS" ]; then
+              ROCKS_CHANGED=true
+              echo "📦 percolate-rocks: v${PREV_ROCKS} → v${ROCKS_VERSION}"
+            fi
           fi
 
-          # Check percolate
-          if echo "$TAG" | grep -qE '^percolate-v[0-9]+\.[0-9]+\.[0-9]+-rc[0-9]+$'; then
-            PERCOLATE_CHANGED=true
-            PERCOLATE_VERSION=$(echo "$TAG" | sed -E 's/^percolate-v([0-9]+\.[0-9]+\.[0-9]+)-rc[0-9]+$/\1/')
-            echo "📦 percolate: v${PERCOLATE_VERSION}"
+          # Check percolate (pyproject.toml)
+          if git diff HEAD~1 HEAD -- percolate/pyproject.toml | grep -q '^+version'; then
+            PERCOLATE_VERSION=$(grep '^version = ' percolate/pyproject.toml | cut -d'"' -f2)
+            PREV_PERCOLATE=$(git show HEAD~1:percolate/pyproject.toml | grep '^version = ' | cut -d'"' -f2)
+            if [ "$PERCOLATE_VERSION" != "$PREV_PERCOLATE" ]; then
+              PERCOLATE_CHANGED=true
+              echo "📦 percolate: v${PREV_PERCOLATE} → v${PERCOLATE_VERSION}"
+            fi
           fi
 
-          # Check percolate-reading
-          if echo "$TAG" | grep -qE '^percolate-reading-v[0-9]+\.[0-9]+\.[0-9]+-rc[0-9]+$'; then
-            READING_CHANGED=true
-            READING_VERSION=$(echo "$TAG" | sed -E 's/^percolate-reading-v([0-9]+\.[0-9]+\.[0-9]+)-rc[0-9]+$/\1/')
-            echo "📦 percolate-reading: v${READING_VERSION}"
+          # Check percolate-reading (pyproject.toml)
+          if git diff HEAD~1 HEAD -- percolate-reading/pyproject.toml | grep -q '^+version'; then
+            READING_VERSION=$(grep '^version = ' percolate-reading/pyproject.toml | cut -d'"' -f2)
+            PREV_READING=$(git show HEAD~1:percolate-reading/pyproject.toml | grep '^version = ' | cut -d'"' -f2)
+            if [ "$READING_VERSION" != "$PREV_READING" ]; then
+              READING_CHANGED=true
+              echo "📦 percolate-reading: v${PREV_READING} → v${READING_VERSION}"
+            fi
+          fi
+
+          # If no version changes detected, check if files exist (initial case)
+          if [ "$ROCKS_CHANGED" == "false" ] && [ -f percolate-rocks/Cargo.toml ]; then
+            ROCKS_VERSION=$(grep '^version = ' percolate-rocks/Cargo.toml | cut -d'"' -f2 || echo "")
+          fi
+          if [ "$PERCOLATE_CHANGED" == "false" ] && [ -f percolate/pyproject.toml ]; then
+            PERCOLATE_VERSION=$(grep '^version = ' percolate/pyproject.toml | cut -d'"' -f2 || echo "")
+          fi
+          if [ "$READING_CHANGED" == "false" ] && [ -f percolate-reading/pyproject.toml ]; then
+            READING_VERSION=$(grep '^version = ' percolate-reading/pyproject.toml | cut -d'"' -f2 || echo "")
           fi
 
           # Set outputs
