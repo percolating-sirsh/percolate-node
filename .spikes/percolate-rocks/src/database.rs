@@ -1202,6 +1202,44 @@ impl Database {
         let traversal = crate::graph::GraphTraversal::new(self as &dyn crate::graph::EdgeProvider);
         traversal.shortest_path(start_id, end_id, direction, max_depth)
     }
+
+    /// Execute SQL query.
+    ///
+    /// # Arguments
+    ///
+    /// * `tenant_id` - Tenant scope
+    /// * `sql` - SQL SELECT statement
+    ///
+    /// # Returns
+    ///
+    /// Query results as JSON array
+    ///
+    /// # Errors
+    ///
+    /// Returns `DatabaseError` if query fails
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// let results = db.query_sql("tenant1", "SELECT * FROM person WHERE age > 30")?;
+    /// ```
+    pub fn query_sql(
+        &self,
+        tenant_id: &str,
+        sql: &str,
+    ) -> Result<serde_json::Value> {
+        // Parse SQL
+        let statement = crate::query::parser::parse_sql(sql)?;
+
+        // Extract table name
+        let table = crate::query::parser::extract_table_name(&statement)?;
+
+        // Get all entities from table
+        let entities = self.list(tenant_id, &table, false, None)?;
+
+        // Execute query
+        crate::query::executor::execute_query(&statement, entities)
+    }
 }
 
 /// Implement EdgeProvider trait for Database.
