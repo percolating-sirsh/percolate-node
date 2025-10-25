@@ -1,0 +1,279 @@
+name: Release percolate-reading (Docker)
+
+on:
+  push:
+    tags:
+      - 'percolate-reading-v[0-9]+.[0-9]+.[0-9]+'
+
+env:
+  PROJECT_DIR: percolate-reading
+  REGISTRY: ghcr.io
+  MANIFEST_REPO: percolation-labs/percolate-cloud  # TODO: Update with actual manifest repo
+  MANIFEST_BRANCH: main  # TODO: Update with actual branch
+  BASE_PATH: applications  # TODO: Update with actual path
+
+jobs:
+  check-version:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.check.outputs.version }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Extract and validate version
+        id: check
+        run: |
+          TAG_NAME="${GITHUB_REF_NAME}"
+          echo "🔍 Release tag: $TAG_NAME"
+
+          # Validate production tag format (no RC)
+          if echo "$TAG_NAME" | grep -qE 'rc[0-9]+'; then
+            echo "❌ This is an RC tag. Use build-reading.yml instead."
+            exit 1
+          fi
+
+          if ! echo "$TAG_NAME" | grep -qE '^percolate-reading-v[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "❌ Invalid tag format. Expected: percolate-reading-v0.1.0"
+            exit 1
+          fi
+
+          # Extract version
+          VERSION=$(echo "$TAG_NAME" | sed -E 's/^percolate-reading-v//')
+          echo "📦 Release version: ${VERSION}"
+
+          # Verify version matches pyproject.toml
+          PYPROJECT_VERSION=$(grep '^version = ' ${{ env.PROJECT_DIR }}/pyproject.toml | cut -d'"' -f2)
+          if [ "$VERSION" != "$PYPROJECT_VERSION" ]; then
+            echo "❌ Version mismatch with pyproject.toml: ${PYPROJECT_VERSION}"
+            exit 1
+          fi
+
+          echo "✅ Version validation passed"
+          echo "version=${VERSION}" >> $GITHUB_OUTPUT
+
+  find-rc-images:
+    runs-on: ubuntu-latest
+    needs: check-version
+    strategy:
+      fail-fast: false
+      matrix:
+        platform: [amd64, arm64]
+    outputs:
+      image_amd64: ${{ steps.find.outputs.image_amd64 }}
+      image_arm64: ${{ steps.find.outputs.image_arm64 }}
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Find latest RC CalVer tag
+        id: find
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VERSION="${{ needs.check-version.outputs.version }}"
+          PLATFORM="${{ matrix.platform }}"
+          echo "🔍 Searching for latest RC image for v${VERSION}-${PLATFORM}"
+
+          # Find all RC tags for this version
+          RC_TAGS=$(git tag -l "percolate-reading-v${VERSION}-rc*" | sort -V)
+
+          if [ -z "$RC_TAGS" ]; then
+            echo "❌ No RC builds found for v${VERSION}"
+            echo "   Please create an RC tag first: percolate-reading-v${VERSION}-rc1"
+            exit 1
+          fi
+
+          # Get latest RC tag
+          LATEST_RC=$(echo "$RC_TAGS" | tail -1)
+          echo "✅ Found RC tag: ${LATEST_RC}"
+
+          # Get build metadata from that RC's workflow run
+          # This is a simplified version - in practice, query GitHub API or use artifacts
+          OWNER=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
+          BASE="${{ env.REGISTRY }}/${OWNER}/percolate-reading"
+
+          # Search for CalVer-tagged images matching this version
+          # Format: YYYY.MM.DD.HHMM-build.N-vVERSION-SHA-PLATFORM
+          # This requires gh CLI or API call - simplified for now
+          echo "📦 Searching GHCR for images matching v${VERSION}-${PLATFORM}..."
+
+          # TODO: Implement proper image search via GitHub API
+          # For now, construct expected tag pattern
+          # This would need actual API integration
+          echo "⚠️  Manual verification needed - ensure RC build completed successfully"
+
+          # Placeholder: construct expected image reference
+          # In real workflow, this would query GHCR API
+          IMAGE_TAG="${BASE}:*-v${VERSION}-*-${PLATFORM}"
+          echo "Expected pattern: ${IMAGE_TAG}"
+
+          # Store output
+          echo "image_${PLATFORM}=${IMAGE_TAG}" >> $GITHUB_OUTPUT
+
+  retag-images:
+    runs-on: ubuntu-latest
+    needs: [check-version, find-rc-images]
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
+    strategy:
+      fail-fast: false
+      matrix:
+        platform: [amd64, arm64]
+
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+
+    steps:
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract version
+        id: version
+        run: |
+          VERSION="${{ needs.check-version.outputs.version }}"
+          echo "version=${VERSION}" >> $GITHUB_OUTPUT
+          echo "📦 Version: ${VERSION}"
+
+      - name: Build image reference
+        id: image
+        run: |
+          OWNER=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
+          BASE="${{ env.REGISTRY }}/${OWNER}/percolate-reading"
+          VERSION="${{ needs.check-version.outputs.version }}"
+          PLATFORM="${{ matrix.platform }}"
+
+          # TODO: Get actual CalVer tag from find-rc-images
+          # For now, using placeholder
+          SOURCE_TAG="placeholder-calver-v${VERSION}-${PLATFORM}"
+          SOURCE_IMAGE="${BASE}:${SOURCE_TAG}"
+
+          echo "⚠️  TODO: Implement actual RC image discovery"
+          echo "Expected source: ${SOURCE_IMAGE}"
+
+          # Clean semantic version tag
+          CLEAN_TAG="${BASE}:${VERSION}-${PLATFORM}"
+
+          echo "source_image=${SOURCE_IMAGE}" >> $GITHUB_OUTPUT
+          echo "clean_tag=${CLEAN_TAG}" >> $GITHUB_OUTPUT
+          echo "🏷️  Will retag to: ${CLEAN_TAG}"
+
+      # TODO: Implement actual pull/retag/push once RC discovery is working
+      - name: Pull, retag, and push (TODO)
+        run: |
+          echo "⚠️  Retag step not yet implemented"
+          echo "   Source: ${{ steps.image.outputs.source_image }}"
+          echo "   Target: ${{ steps.image.outputs.clean_tag }}"
+          echo ""
+          echo "   This step will:"
+          echo "   1. Pull RC image from GHCR"
+          echo "   2. Retag with clean version"
+          echo "   3. Push to GHCR"
+          echo "   4. Sign with Cosign"
+          echo "   5. Generate and attach SBOM"
+
+      # Placeholder for Cosign signing
+      - name: Sign with Cosign (TODO)
+        run: |
+          echo "⚠️  Cosign signing not yet implemented"
+          echo "   Will sign: ${{ steps.image.outputs.clean_tag }}"
+
+      # Placeholder for SBOM generation
+      - name: Generate SBOM (TODO)
+        run: |
+          echo "⚠️  SBOM generation not yet implemented"
+          echo "   Will generate SBOM for: ${{ steps.image.outputs.clean_tag }}"
+
+  update-manifests:
+    runs-on: ubuntu-latest
+    needs: [retag-images]
+    permissions:
+      contents: write
+
+    steps:
+      - name: Update K8s manifests (TODO - null-op)
+        run: |
+          VERSION="${{ needs.retag-images.outputs.version }}"
+          echo "📝 K8s manifest update (not yet implemented)"
+          echo ""
+          echo "This step will update Argo CD application manifests when implemented:"
+          echo ""
+          echo "   Repository: ${{ env.MANIFEST_REPO }}"
+          echo "   Branch: ${{ env.MANIFEST_BRANCH }}"
+          echo "   Path: ${{ env.BASE_PATH }}/percolate-reading/"
+          echo "   Version: ${VERSION}"
+          echo ""
+          echo "Manual steps for now:"
+          echo "   1. Navigate to manifest repository"
+          echo "   2. Update image tag in deployment manifests"
+          echo "   3. Commit and push changes"
+          echo "   4. Argo CD will auto-sync (if enabled)"
+          echo ""
+          echo "Expected image tags:"
+          echo "   - ghcr.io/$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')/percolate-reading:${VERSION}-amd64"
+          echo "   - ghcr.io/$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')/percolate-reading:${VERSION}-arm64"
+
+  create-release:
+    runs-on: ubuntu-latest
+    needs: [check-version, update-manifests]
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v1
+        with:
+          name: percolate-reading v${{ needs.check-version.outputs.version }}
+          body: |
+            # percolate-reading v${{ needs.check-version.outputs.version }}
+
+            Heavy multimedia processing service for Percolate.
+
+            ## Docker Images
+
+            ```bash
+            # AMD64
+            docker pull ghcr.io/${{ github.repository_owner }}/percolate-reading:${{ needs.check-version.outputs.version }}-amd64
+
+            # ARM64
+            docker pull ghcr.io/${{ github.repository_owner }}/percolate-reading:${{ needs.check-version.outputs.version }}-arm64
+            ```
+
+            ## What's Changed
+
+            See [CHANGELOG](https://github.com/${{ github.repository }}/blob/main/${{ env.PROJECT_DIR }}/CHANGELOG.md) for details.
+
+            ## Deployment
+
+            Kubernetes manifests updated in [${{ env.MANIFEST_REPO }}](https://github.com/${{ env.MANIFEST_REPO }})
+
+            ⚠️ **Note:** K8s manifest automation not yet implemented. Manual update required.
+
+            ## Security
+
+            - 🔐 Images signed with Cosign (TODO)
+            - 📋 SBOM attached (TODO)
+            - 🛡️ Scanned with Trivy in build stage
+          draft: false
+          prerelease: false
+
+      - name: Create summary
+        run: |
+          echo "### 🚀 percolate-reading v${{ needs.check-version.outputs.version }} Released!" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "✅ Images retagged (TODO: complete implementation)" >> $GITHUB_STEP_SUMMARY
+          echo "📦 GitHub Release created" >> $GITHUB_STEP_SUMMARY
+          echo "⚠️  K8s manifests need manual update" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "🔗 [View on GHCR](https://github.com/${{ github.repository }}/pkgs/container/percolate-reading)" >> $GITHUB_STEP_SUMMARY

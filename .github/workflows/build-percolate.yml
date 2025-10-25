@@ -1,0 +1,236 @@
+name: Build percolate (Docker)
+
+on:
+  push:
+    tags:
+      - 'percolate-v[0-9]+.[0-9]+.[0-9]+-rc*'
+  workflow_call:
+
+env:
+  PROJECT_DIR: percolate
+  REGISTRY: ghcr.io
+
+jobs:
+  check-version:
+    runs-on: ubuntu-latest
+    outputs:
+      should_build: ${{ steps.check.outputs.should_build }}
+      version: ${{ steps.check.outputs.version }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Extract and validate version
+        id: check
+        run: |
+          TAG_NAME="${GITHUB_REF_NAME}"
+          echo "🔍 Checking tag: $TAG_NAME"
+
+          # Validate RC tag format
+          if ! echo "$TAG_NAME" | grep -qE '^percolate-v[0-9]+\.[0-9]+\.[0-9]+-rc[0-9]+$'; then
+            echo "❌ Invalid tag format. Expected: percolate-v0.1.0-rc1"
+            exit 1
+          fi
+
+          # Extract version (strip prefix and rc suffix)
+          VERSION=$(echo "$TAG_NAME" | sed -E 's/^percolate-v([0-9]+\.[0-9]+\.[0-9]+)-rc[0-9]+$/\1/')
+          echo "📦 Extracted version: ${VERSION}"
+
+          # Verify version matches version.py (dynamic versioning via hatch)
+          VERSION_PY=$(grep '__version__' ${{ env.PROJECT_DIR }}/src/percolate/version.py | cut -d'"' -f2)
+          echo "📄 version.py: ${VERSION_PY}"
+
+          if [ "$VERSION" != "$VERSION_PY" ]; then
+            echo "❌ Version mismatch!"
+            echo "   Tag version:  ${VERSION}"
+            echo "   version.py:   ${VERSION_PY}"
+            exit 1
+          fi
+
+          echo "✅ Version validation passed"
+          echo "should_build=true" >> $GITHUB_OUTPUT
+          echo "version=${VERSION}" >> $GITHUB_OUTPUT
+
+  build-test-push:
+    needs: check-version
+    if: needs.check-version.outputs.should_build == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+
+    strategy:
+      fail-fast: false
+      matrix:
+        platform: [linux/amd64, linux/arm64]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Generate CalVer tag
+        id: calver
+        run: |
+          CALVER=$(date -u +'%Y.%m.%d.%H%M')
+          BUILD_NUMBER="${{ github.run_number }}"
+          SHORT_SHA="${{ github.sha }}"
+          SHORT_SHA="${SHORT_SHA:0:7}"
+          VERSION="${{ needs.check-version.outputs.version }}"
+
+          # Format: YYYY.MM.DD.HHMM-build.NUMBER-vVERSION-SHA
+          CALVER_TAG="${CALVER}-build.${BUILD_NUMBER}-v${VERSION}-${SHORT_SHA}"
+
+          echo "calver=${CALVER_TAG}" >> $GITHUB_OUTPUT
+          echo "version=${VERSION}" >> $GITHUB_OUTPUT
+          echo "📅 CalVer tag: ${CALVER_TAG}"
+          echo "📦 Build version: v${VERSION}"
+
+      - name: Build Docker tags
+        id: tags
+        run: |
+          OWNER=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
+          BASE="${{ env.REGISTRY }}/${OWNER}/percolate"
+          CALVER="${{ steps.calver.outputs.calver }}"
+
+          # Extract architecture from platform (linux/amd64 -> amd64)
+          ARCH=$(echo "${{ matrix.platform }}" | cut -d'/' -f2)
+
+          # Tag format: BASE:CALVER-ARCH
+          TAGS="$BASE:${CALVER}-${ARCH}"
+
+          echo "tags=$TAGS" >> $GITHUB_OUTPUT
+          echo "arch=${ARCH}" >> $GITHUB_OUTPUT
+          echo "🏷️  Full tag: $TAGS"
+
+      # Build for testing (amd64 only, load locally)
+      - name: Build for testing
+        if: matrix.platform == 'linux/amd64'
+        uses: docker/build-push-action@v5
+        with:
+          context: ./${{ env.PROJECT_DIR }}
+          file: ./${{ env.PROJECT_DIR }}/Dockerfile
+          load: true
+          platforms: linux/amd64
+          tags: test-image:latest
+          cache-from: type=gha,scope=${{ env.PROJECT_DIR }}-${{ matrix.platform }}
+          build-args: |
+            VERSION=${{ needs.check-version.outputs.version }}
+            BUILD_DATE=${{ steps.calver.outputs.calver }}
+            GIT_COMMIT=${{ github.sha }}
+
+      # Test the locally built image (amd64 only)
+      - name: Test Docker image
+        if: matrix.platform == 'linux/amd64'
+        run: |
+          echo "🧪 Testing percolate image..."
+
+          # Test container runs
+          docker run --rm test-image:latest echo "✓ Image runs successfully"
+
+          # Test CLI
+          docker run --rm test-image:latest .venv/bin/percolate --version
+
+          # Test API server starts
+          docker run -d --name test-api -p 8000:8000 test-image:latest
+          sleep 10
+
+          # Check health endpoint
+          curl -f http://localhost:8000/health || (docker logs test-api && exit 1)
+
+          docker stop test-api && docker rm test-api
+          echo "✅ All tests passed"
+
+      # Trivy scan (amd64 only)
+      - name: Trivy - Scan container image
+        if: matrix.platform == 'linux/amd64'
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: 'image'
+          image-ref: 'test-image:latest'
+          format: 'table'
+          severity: 'CRITICAL,HIGH'
+          exit-code: '1'
+          scanners: 'vuln,secret,config'
+
+      # Build and push with CalVer tag
+      - name: Build and push with CalVer
+        if: success()
+        uses: docker/build-push-action@v5
+        id: build_push
+        with:
+          context: ./${{ env.PROJECT_DIR }}
+          file: ./${{ env.PROJECT_DIR }}/Dockerfile
+          push: true
+          platforms: ${{ matrix.platform }}
+          tags: ${{ steps.tags.outputs.tags }}
+          cache-from: type=gha,scope=${{ env.PROJECT_DIR }}-${{ matrix.platform }}
+          cache-to: type=gha,mode=max,scope=${{ env.PROJECT_DIR }}-${{ matrix.platform }}
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.description=Percolate - Privacy-first personal AI infrastructure
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.created=${{ steps.calver.outputs.calver }}
+            org.opencontainers.image.version=${{ steps.calver.outputs.version }}
+          build-args: |
+            VERSION=${{ needs.check-version.outputs.version }}
+            BUILD_DATE=${{ steps.calver.outputs.calver }}
+            GIT_COMMIT=${{ github.sha }}
+
+      # Store CalVer tag and build version for release workflow
+      - name: Store CalVer metadata
+        run: |
+          mkdir -p build-metadata/
+          CALVER="${{ steps.calver.outputs.calver }}"
+          VERSION="${{ steps.calver.outputs.version }}"
+          DIGEST="${{ steps.build_push.outputs.digest }}"
+          PRIMARY_TAG=$(echo "${{ steps.tags.outputs.tags }}" | cut -d',' -f1)
+          ARCH="${{ steps.tags.outputs.arch }}"
+
+          # Store metadata for this specific build
+          echo "${CALVER}" > build-metadata/calver-${ARCH}.txt
+          echo "${VERSION}" > build-metadata/version-${ARCH}.txt
+          echo "${DIGEST}" > build-metadata/digest-${ARCH}.txt
+          echo "${PRIMARY_TAG}@${DIGEST}" > build-metadata/image-ref-${ARCH}.txt
+
+          echo "📦 Stored metadata:"
+          echo "   CalVer: ${CALVER}"
+          echo "   Version: v${VERSION}"
+          echo "   Digest: ${DIGEST}"
+          echo "   Image: ${PRIMARY_TAG}"
+
+      - name: Upload build metadata
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-metadata-${{ steps.tags.outputs.arch }}
+          path: build-metadata/
+          retention-days: 30
+
+  create-summary:
+    needs: [check-version, build-test-push]
+    runs-on: ubuntu-latest
+    if: always()
+    steps:
+      - name: Create build summary
+        run: |
+          echo "### 🐳 percolate Build Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Field | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|-------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| **Version** | ${{ needs.check-version.outputs.version }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Tag** | ${{ github.ref_name }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Repository** | GHCR |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Build** | ${{ github.run_number }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Platforms** | linux/amd64, linux/arm64 |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Status** | ${{ job.status }} |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "🔗 [View on GHCR](https://github.com/${{ github.repository }}/pkgs/container/percolate)" >> $GITHUB_STEP_SUMMARY

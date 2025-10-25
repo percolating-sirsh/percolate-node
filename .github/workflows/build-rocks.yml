@@ -1,0 +1,233 @@
+name: Build percolate-rocks (PyPI)
+
+on:
+  push:
+    tags:
+      - 'percolate-rocks-v[0-9]+.[0-9]+.[0-9]+-rc*'
+  workflow_call:
+
+env:
+  PROJECT_DIR: percolate-rocks
+
+jobs:
+  check-version:
+    runs-on: ubuntu-latest
+    outputs:
+      should_build: ${{ steps.check.outputs.should_build }}
+      version: ${{ steps.check.outputs.version }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Extract version from tag
+        id: check
+        run: |
+          TAG_NAME="${GITHUB_REF_NAME}"
+          echo "🔍 Checking tag: $TAG_NAME"
+
+          # Validate RC tag format
+          if ! echo "$TAG_NAME" | grep -qE '^percolate-rocks-v[0-9]+\.[0-9]+\.[0-9]+-rc[0-9]+$'; then
+            echo "❌ Invalid tag format. Expected: percolate-rocks-v0.2.0-rc1"
+            exit 1
+          fi
+
+          # Extract version (strip prefix and rc suffix)
+          VERSION=$(echo "$TAG_NAME" | sed -E 's/^percolate-rocks-v([0-9]+\.[0-9]+\.[0-9]+)-rc[0-9]+$/\1/')
+          echo "📦 Extracted version: ${VERSION}"
+
+          # Verify version matches Cargo.toml
+          CARGO_VERSION=$(grep '^version = ' ${{ env.PROJECT_DIR }}/Cargo.toml | cut -d'"' -f2)
+          echo "📄 Cargo.toml version: ${CARGO_VERSION}"
+
+          if [ "$VERSION" != "$CARGO_VERSION" ]; then
+            echo "❌ Version mismatch!"
+            echo "   Tag version: ${VERSION}"
+            echo "   Cargo.toml:  ${CARGO_VERSION}"
+            exit 1
+          fi
+
+          # Verify pyproject.toml matches too
+          PYPROJECT_VERSION=$(grep '^version = ' ${{ env.PROJECT_DIR }}/pyproject.toml | cut -d'"' -f2)
+          echo "📄 pyproject.toml version: ${PYPROJECT_VERSION}"
+
+          if [ "$VERSION" != "$PYPROJECT_VERSION" ]; then
+            echo "❌ Version mismatch!"
+            echo "   Tag version:      ${VERSION}"
+            echo "   pyproject.toml:   ${PYPROJECT_VERSION}"
+            exit 1
+          fi
+
+          echo "✅ Version validation passed"
+          echo "should_build=true" >> $GITHUB_OUTPUT
+          echo "version=${VERSION}" >> $GITHUB_OUTPUT
+
+  build-wheels:
+    needs: check-version
+    if: needs.check-version.outputs.should_build == 'true'
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            platform: linux-amd64
+          - os: ubuntu-latest
+            target: aarch64-unknown-linux-gnu
+            platform: linux-arm64
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            platform: darwin-arm64
+          - os: macos-latest
+            target: x86_64-apple-darwin
+            platform: darwin-amd64
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: stable
+          target: ${{ matrix.target }}
+          override: true
+
+      - name: Install maturin
+        run: pip install maturin
+
+      - name: Build wheel
+        working-directory: ${{ env.PROJECT_DIR }}
+        run: |
+          echo "🔨 Building wheel for ${{ matrix.platform }}"
+          maturin build --release --target ${{ matrix.target }}
+          ls -lh target/wheels/
+
+      - name: Test wheel (native only)
+        if: matrix.platform == 'linux-amd64' || matrix.platform == 'darwin-arm64'
+        working-directory: ${{ env.PROJECT_DIR }}
+        run: |
+          pip install target/wheels/*.whl
+          python3 -c "import rem_db; print('✓ Import successful'); print(f'Version: {rem_db.__version__}')"
+
+      - name: Upload wheel
+        uses: actions/upload-artifact@v4
+        with:
+          name: wheel-${{ matrix.platform }}
+          path: ${{ env.PROJECT_DIR }}/target/wheels/*.whl
+          retention-days: 30
+
+  test-wheels:
+    needs: build-wheels
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download all wheels
+        uses: actions/download-artifact@v4
+        with:
+          path: wheels/
+
+      - name: List wheels
+        run: |
+          echo "📦 Built wheels:"
+          find wheels/ -name "*.whl" -exec ls -lh {} \;
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install and test wheel
+        run: |
+          WHEEL=$(find wheels/wheel-linux-amd64/ -name "*.whl" | head -1)
+          echo "🧪 Testing wheel: ${WHEEL}"
+          pip install "${WHEEL}"
+          python3 -c "import rem_db; print('✓ Package import works')"
+          python3 -c "from rem_db import Database; print('✓ Database class accessible')"
+
+  publish-pypi:
+    needs: [check-version, test-wheels]
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write  # For trusted publishing
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download all wheels
+        uses: actions/download-artifact@v4
+        with:
+          path: wheels/
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install maturin
+        run: pip install maturin
+
+      - name: Publish to PyPI
+        working-directory: ${{ env.PROJECT_DIR }}
+        env:
+          MATURIN_PYPI_TOKEN: ${{ secrets.PYPI_API_TOKEN }}
+        run: |
+          VERSION="${{ needs.check-version.outputs.version }}"
+          echo "📤 Publishing percolate-rocks v${VERSION} to PyPI"
+
+          # Copy wheels to target directory
+          mkdir -p target/wheels
+          find ../wheels/ -name "*.whl" -exec cp {} target/wheels/ \;
+
+          # Publish with skip-existing in case of retries
+          maturin publish --skip-existing
+
+          echo "✅ Published to PyPI"
+          echo "🔗 https://pypi.org/project/percolate-rocks/${VERSION}/"
+
+      - name: Store metadata
+        run: |
+          mkdir -p build-metadata/
+          VERSION="${{ needs.check-version.outputs.version }}"
+          echo "${VERSION}" > build-metadata/version.txt
+          echo "pypi" > build-metadata/repository.txt
+          echo "$(date -u +'%Y.%m.%d.%H%M')-build.${{ github.run_number }}" > build-metadata/build-id.txt
+
+      - name: Upload metadata
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-metadata
+          path: build-metadata/
+          retention-days: 30
+
+  create-summary:
+    needs: [check-version, publish-pypi]
+    runs-on: ubuntu-latest
+    if: always()
+    steps:
+      - name: Create build summary
+        run: |
+          echo "### 🐍 percolate-rocks Build Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Field | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|-------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| **Version** | ${{ needs.check-version.outputs.version }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Tag** | ${{ github.ref_name }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Repository** | PyPI |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Build** | ${{ github.run_number }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Status** | ${{ job.status }} |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "🔗 [View on PyPI](https://pypi.org/project/percolate-rocks/${{ needs.check-version.outputs.version }}/)" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "#### 📦 Platform Wheels" >> $GITHUB_STEP_SUMMARY
+          echo "- Linux x86_64" >> $GITHUB_STEP_SUMMARY
+          echo "- Linux ARM64" >> $GITHUB_STEP_SUMMARY
+          echo "- macOS ARM64 (Apple Silicon)" >> $GITHUB_STEP_SUMMARY
+          echo "- macOS x86_64 (Intel)" >> $GITHUB_STEP_SUMMARY

@@ -1,0 +1,124 @@
+name: Build All (Orchestrator)
+
+on:
+  push:
+    tags:
+      - '*-v[0-9]+.[0-9]+.[0-9]+-rc*'
+
+jobs:
+  detect-changes:
+    runs-on: ubuntu-latest
+    outputs:
+      rocks_changed: ${{ steps.detect.outputs.rocks_changed }}
+      percolate_changed: ${{ steps.detect.outputs.percolate_changed }}
+      reading_changed: ${{ steps.detect.outputs.reading_changed }}
+      rocks_version: ${{ steps.detect.outputs.rocks_version }}
+      percolate_version: ${{ steps.detect.outputs.percolate_version }}
+      reading_version: ${{ steps.detect.outputs.reading_version }}
+
+    steps:
+      - name: Detect what changed
+        id: detect
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+          echo "🏷️  Tag: $TAG"
+
+          # Initialize outputs
+          ROCKS_CHANGED=false
+          PERCOLATE_CHANGED=false
+          READING_CHANGED=false
+
+          # Check percolate-rocks
+          if echo "$TAG" | grep -qE '^percolate-rocks-v[0-9]+\.[0-9]+\.[0-9]+-rc[0-9]+$'; then
+            ROCKS_CHANGED=true
+            ROCKS_VERSION=$(echo "$TAG" | sed -E 's/^percolate-rocks-v([0-9]+\.[0-9]+\.[0-9]+)-rc[0-9]+$/\1/')
+            echo "📦 percolate-rocks: v${ROCKS_VERSION}"
+          fi
+
+          # Check percolate
+          if echo "$TAG" | grep -qE '^percolate-v[0-9]+\.[0-9]+\.[0-9]+-rc[0-9]+$'; then
+            PERCOLATE_CHANGED=true
+            PERCOLATE_VERSION=$(echo "$TAG" | sed -E 's/^percolate-v([0-9]+\.[0-9]+\.[0-9]+)-rc[0-9]+$/\1/')
+            echo "📦 percolate: v${PERCOLATE_VERSION}"
+          fi
+
+          # Check percolate-reading
+          if echo "$TAG" | grep -qE '^percolate-reading-v[0-9]+\.[0-9]+\.[0-9]+-rc[0-9]+$'; then
+            READING_CHANGED=true
+            READING_VERSION=$(echo "$TAG" | sed -E 's/^percolate-reading-v([0-9]+\.[0-9]+\.[0-9]+)-rc[0-9]+$/\1/')
+            echo "📦 percolate-reading: v${READING_VERSION}"
+          fi
+
+          # Set outputs
+          echo "rocks_changed=${ROCKS_CHANGED}" >> $GITHUB_OUTPUT
+          echo "percolate_changed=${PERCOLATE_CHANGED}" >> $GITHUB_OUTPUT
+          echo "reading_changed=${READING_CHANGED}" >> $GITHUB_OUTPUT
+          echo "rocks_version=${ROCKS_VERSION}" >> $GITHUB_OUTPUT
+          echo "percolate_version=${PERCOLATE_VERSION}" >> $GITHUB_OUTPUT
+          echo "reading_version=${READING_VERSION}" >> $GITHUB_OUTPUT
+
+  build-rocks:
+    needs: detect-changes
+    if: needs.detect-changes.outputs.rocks_changed == 'true'
+    uses: ./.github/workflows/build-rocks.yml
+    secrets: inherit
+
+  build-percolate:
+    needs: [detect-changes, build-rocks]
+    if: |
+      always() &&
+      needs.detect-changes.outputs.percolate_changed == 'true' &&
+      (needs.detect-changes.outputs.rocks_changed == 'false' || needs.build-rocks.result == 'success')
+    uses: ./.github/workflows/build-percolate.yml
+    secrets: inherit
+
+  build-reading:
+    needs: [detect-changes, build-rocks]
+    if: |
+      always() &&
+      needs.detect-changes.outputs.reading_changed == 'true' &&
+      (needs.detect-changes.outputs.rocks_changed == 'false' || needs.build-rocks.result == 'success')
+    uses: ./.github/workflows/build-reading.yml
+    secrets: inherit
+
+  summary:
+    needs: [detect-changes, build-rocks, build-percolate, build-reading]
+    runs-on: ubuntu-latest
+    if: always()
+    steps:
+      - name: Create build summary
+        run: |
+          echo "### 🚀 Build Orchestrator Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Project | Changed | Version | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|---------|---------|---------|--------|" >> $GITHUB_STEP_SUMMARY
+
+          # percolate-rocks
+          if [ "${{ needs.detect-changes.outputs.rocks_changed }}" == "true" ]; then
+            STATUS="${{ needs.build-rocks.result }}"
+            VERSION="${{ needs.detect-changes.outputs.rocks_version }}"
+            echo "| percolate-rocks | ✓ | v${VERSION} | ${STATUS} |" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "| percolate-rocks | - | - | skipped |" >> $GITHUB_STEP_SUMMARY
+          fi
+
+          # percolate
+          if [ "${{ needs.detect-changes.outputs.percolate_changed }}" == "true" ]; then
+            STATUS="${{ needs.build-percolate.result }}"
+            VERSION="${{ needs.detect-changes.outputs.percolate_version }}"
+            echo "| percolate | ✓ | v${VERSION} | ${STATUS} |" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "| percolate | - | - | skipped |" >> $GITHUB_STEP_SUMMARY
+          fi
+
+          # percolate-reading
+          if [ "${{ needs.detect-changes.outputs.reading_changed }}" == "true" ]; then
+            STATUS="${{ needs.build-reading.result }}"
+            VERSION="${{ needs.detect-changes.outputs.reading_version }}"
+            echo "| percolate-reading | ✓ | v${VERSION} | ${STATUS} |" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "| percolate-reading | - | - | skipped |" >> $GITHUB_STEP_SUMMARY
+          fi
+
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "📋 Build DAG: rocks → (percolate + reading) → manifests" >> $GITHUB_STEP_SUMMARY

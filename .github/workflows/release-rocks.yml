@@ -1,0 +1,152 @@
+name: Release percolate-rocks (GitHub Release)
+
+on:
+  push:
+    tags:
+      - 'percolate-rocks-v[0-9]+.[0-9]+.[0-9]+'
+
+env:
+  PROJECT_DIR: percolate-rocks
+
+# Note: Package is already published to PyPI by build-rocks.yml
+# This workflow creates a production GitHub release
+
+jobs:
+  check-version:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.check.outputs.version }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Extract and validate version
+        id: check
+        run: |
+          TAG_NAME="${GITHUB_REF_NAME}"
+          echo "🔍 Release tag: $TAG_NAME"
+
+          # Validate production tag format (no RC)
+          if echo "$TAG_NAME" | grep -qE 'rc[0-9]+'; then
+            echo "❌ This is an RC tag. Production tags should not have -rc suffix."
+            exit 1
+          fi
+
+          if ! echo "$TAG_NAME" | grep -qE '^percolate-rocks-v[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "❌ Invalid tag format. Expected: percolate-rocks-v0.2.0"
+            exit 1
+          fi
+
+          # Extract version
+          VERSION=$(echo "$TAG_NAME" | sed -E 's/^percolate-rocks-v//')
+          echo "📦 Release version: ${VERSION}"
+
+          # Verify version matches Cargo.toml
+          CARGO_VERSION=$(grep '^version = ' ${{ env.PROJECT_DIR }}/Cargo.toml | cut -d'"' -f2)
+          if [ "$VERSION" != "$CARGO_VERSION" ]; then
+            echo "❌ Version mismatch with Cargo.toml: ${CARGO_VERSION}"
+            exit 1
+          fi
+
+          echo "✅ Version validation passed"
+          echo "version=${VERSION}" >> $GITHUB_OUTPUT
+
+  verify-pypi:
+    needs: check-version
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify package exists on PyPI
+        run: |
+          VERSION="${{ needs.check-version.outputs.version }}"
+          echo "🔍 Verifying percolate-rocks v${VERSION} on PyPI..."
+
+          # Check if version exists on PyPI
+          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" "https://pypi.org/pypi/percolate-rocks/${VERSION}/json")
+
+          if [ "$HTTP_CODE" != "200" ]; then
+            echo "❌ Package not found on PyPI!"
+            echo "   Please ensure an RC build was published first."
+            echo "   Expected URL: https://pypi.org/project/percolate-rocks/${VERSION}/"
+            exit 1
+          fi
+
+          echo "✅ Package verified on PyPI"
+
+  create-release:
+    needs: [check-version, verify-pypi]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check for release notes
+        id: notes
+        run: |
+          VERSION="${{ needs.check-version.outputs.version }}"
+          NOTES_DIR="${{ env.PROJECT_DIR }}/.release/v${VERSION}"
+
+          if [ -d "$NOTES_DIR" ]; then
+            echo "✅ Found release notes in ${NOTES_DIR}"
+            echo "has_notes=true" >> $GITHUB_OUTPUT
+          else
+            echo "⚠️  No release notes found"
+            echo "has_notes=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v1
+        with:
+          name: percolate-rocks v${{ needs.check-version.outputs.version }}
+          body: |
+            # percolate-rocks v${{ needs.check-version.outputs.version }}
+
+            High-performance embedded database for semantic search, graph queries, and structured data.
+
+            ## Installation
+
+            ```bash
+            pip install percolate-rocks==${{ needs.check-version.outputs.version }}
+            ```
+
+            ## Platform Support
+
+            Multi-platform wheels available:
+            - Linux x86_64
+            - Linux ARM64
+            - macOS ARM64 (Apple Silicon)
+            - macOS x86_64 (Intel)
+
+            ## What's Changed
+
+            ${{ steps.notes.outputs.has_notes == 'true' && 'See release notes in `.release/` directory' || 'No release notes provided' }}
+
+            ## Links
+
+            - 📦 [PyPI Package](https://pypi.org/project/percolate-rocks/${{ needs.check-version.outputs.version }}/)
+            - 📚 [Documentation](https://github.com/${{ github.repository }}/blob/main/${{ env.PROJECT_DIR }}/README.md)
+            - 🐛 [Report Issues](https://github.com/${{ github.repository }}/issues)
+
+            ---
+
+            Install with: `pip install percolate-rocks==${{ needs.check-version.outputs.version }}`
+          draft: false
+          prerelease: false
+
+      - name: Create summary
+        run: |
+          echo "### 🚀 percolate-rocks v${{ needs.check-version.outputs.version }} Released!" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "✅ Package already on PyPI" >> $GITHUB_STEP_SUMMARY
+          echo "📦 GitHub Release created" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "#### Links" >> $GITHUB_STEP_SUMMARY
+          echo "- [PyPI Package](https://pypi.org/project/percolate-rocks/${{ needs.check-version.outputs.version }}/)" >> $GITHUB_STEP_SUMMARY
+          echo "- [GitHub Release](https://github.com/${{ github.repository }}/releases/tag/${{ github.ref_name }})" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "#### Platform Wheels" >> $GITHUB_STEP_SUMMARY
+          echo "- Linux x86_64" >> $GITHUB_STEP_SUMMARY
+          echo "- Linux ARM64" >> $GITHUB_STEP_SUMMARY
+          echo "- macOS ARM64 (Apple Silicon)" >> $GITHUB_STEP_SUMMARY
+          echo "- macOS x86_64 (Intel)" >> $GITHUB_STEP_SUMMARY
