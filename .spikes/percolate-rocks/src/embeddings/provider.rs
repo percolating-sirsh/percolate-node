@@ -89,7 +89,19 @@ impl ProviderFactory {
                 let model = if parts.len() > 1 {
                     parts[1]
                 } else {
-                    "all-MiniLM-L6-v2" // Default
+                    // NOTE: Consider upgrading default to "jina-embeddings-v4" for 2025 (see docs/2025-review.md)
+                    // Benefits:
+                    // - +10-15% accuracy improvement over all-MiniLM-L6-v2 (MTEB benchmarks)
+                    // - Matryoshka embeddings: flexible dimensions (64-1024) from single model
+                    // - Multi-vector mode support (ColBERT-style late interaction)
+                    // - Multilingual: 100+ languages vs English-only
+                    // - Vision mode: ColPali-style document retrieval
+                    // - Apache 2.0 license
+                    // References:
+                    // - https://jina.ai/news/jina-embeddings-v4
+                    // - https://arxiv.org/abs/2506.18902
+                    // - MTEB leaderboard: https://huggingface.co/spaces/mteb/leaderboard
+                    "all-MiniLM-L6-v2" // Default (proven, lightweight, 384 dims)
                 };
 
                 let embedder = LocalEmbedder::new(model)?;
