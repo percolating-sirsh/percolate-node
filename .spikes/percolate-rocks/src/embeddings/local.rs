@@ -87,29 +87,47 @@ impl LocalEmbedder {
 #[async_trait]
 impl EmbeddingProvider for LocalEmbedder {
     async fn embed(&self, text: &str) -> Result<Vec<f32>> {
-        // embed-anything doesn't have a direct single-text method
-        // Use embed_query which takes a vector
-        let texts = vec![text.to_string()];
+        // embed_query takes &[&str]
+        let texts = [text];
         let embedder = self.embedder.clone();
 
-        // embed_query returns a Future, so we need to await it
-        let results = embed_anything::embed_query(texts, &embedder, None)
+        // embed_query returns Vec<EmbedData>, we need to extract embeddings
+        let results = embed_anything::embed_query(&texts, &embedder, None)
             .await
             .map_err(|e| DatabaseError::EmbeddingError(format!("Embedding failed: {:?}", e)))?;
 
-        // Extract first result
-        results.into_iter().next()
-            .ok_or_else(|| DatabaseError::EmbeddingError("No embedding returned".to_string()))
+        // Extract first embedding from EmbedData
+        let embed_data = results.into_iter().next()
+            .ok_or_else(|| DatabaseError::EmbeddingError("No embedding returned".to_string()))?;
+
+        // Extract DenseVector from EmbeddingResult enum
+        match embed_data.embedding {
+            embed_anything::embeddings::embed::EmbeddingResult::DenseVector(vec) => Ok(vec),
+            embed_anything::embeddings::embed::EmbeddingResult::MultiVector(_) => {
+                Err(DatabaseError::EmbeddingError("Expected DenseVector, got MultiVector".to_string()))
+            }
+        }
     }
 
     async fn embed_batch(&self, texts: &[String]) -> Result<Vec<Vec<f32>>> {
-        let texts = texts.to_vec();
+        // Convert Vec<String> to Vec<&str>
+        let text_refs: Vec<&str> = texts.iter().map(|s| s.as_str()).collect();
         let embedder = self.embedder.clone();
 
-        // embed_query returns a Future, so we need to await it
-        embed_anything::embed_query(texts, &embedder, None)
+        // embed_query returns Vec<EmbedData>, extract embeddings
+        let results = embed_anything::embed_query(&text_refs, &embedder, None)
             .await
-            .map_err(|e| DatabaseError::EmbeddingError(format!("Batch embedding failed: {:?}", e)))
+            .map_err(|e| DatabaseError::EmbeddingError(format!("Batch embedding failed: {:?}", e)))?;
+
+        // Extract embeddings from each EmbedData
+        results.into_iter().map(|embed_data| {
+            match embed_data.embedding {
+                embed_anything::embeddings::embed::EmbeddingResult::DenseVector(vec) => Ok(vec),
+                embed_anything::embeddings::embed::EmbeddingResult::MultiVector(_) => {
+                    Err(DatabaseError::EmbeddingError("Expected DenseVector, got MultiVector".to_string()))
+                }
+            }
+        }).collect()
     }
 
     fn dimensions(&self) -> usize {

@@ -1,0 +1,38 @@
+{
+  "title": "Session",
+  "description": "User conversation session tracking for AI interactions. Sessions group related messages and maintain conversational context. Used by REM Dreaming to analyze user behavior patterns over time.",
+  "version": "1.0.0",
+  "short_name": "sessions",
+  "name": "rem.core.Session",
+
+  "json_schema_extra": {
+    "category": "system",
+    "indexed_fields": ["case_id", "created_at", "user_id"],
+    "key_field": "id"
+  },
+
+  "properties": {
+    "id": {
+      "type": "string",
+      "format": "uuid",
+      "description": "Session UUID (provided by client or auto-generated)"
+    },
+    "case_id": {
+      "type": "string",
+      "format": "uuid",
+      "description": "Optional reference to associated case/project"
+    },
+    "user_id": {
+      "type": "string",
+      "description": "User identifier (from OIDC 'sub' claim or custom ID)"
+    },
+    "metadata": {
+      "type": "object",
+      "description": "Session metadata (e.g., device info, agent config, context)",
+      "default": {},
+      "additionalProperties": true
+    }
+  },
+
+  "required": ["id"]
+}

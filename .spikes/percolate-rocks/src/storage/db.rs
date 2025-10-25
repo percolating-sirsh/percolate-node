@@ -1,27 +1,59 @@
 //! Core storage operations using RocksDB.
 //!
 //! Provides low-level get/put/delete operations with column family support.
+//!
+//! # Encryption at Rest (TODO)
+//!
+//! **Current**: Data stored unencrypted in RocksDB
+//!
+//! **Planned**:
+//! - Each tenant has Ed25519 key pair generated during initialization
+//! - All entity values encrypted with ChaCha20-Poly1305 before storage
+//! - Keys stored in separate column family `CF_KEYS` (encrypted with master password)
+//! - Transparent encryption/decryption in `get()`/`put()` methods
+//!
+//! **Example** (future):
+//! ```rust,ignore
+//! let storage = Storage::open("./data", Some(master_password))?;
+//! storage.put(CF_ENTITIES, key, value)?;  // Automatically encrypts
+//! let decrypted = storage.get(CF_ENTITIES, key)?;  // Automatically decrypts
+//! ```
 
+use crate::crypto::TenantKeyPair;
+use crate::storage::column_families::CF_KEYS;
 use crate::types::{DatabaseError, Result};
 use rocksdb::{DB, ColumnFamily};
 use std::path::Path;
 use std::sync::Arc;
 
-/// Storage wrapper around RocksDB with column family support.
+/// Storage wrapper around RocksDB with column family support and encryption at rest.
 ///
 /// Thread-safe and optimized for concurrent access.
+///
+/// Each tenant has an Ed25519 key pair for encryption:
+/// - Private key encrypted with master password (Argon2 KDF)
+/// - Public key stored unencrypted for sharing
+/// - All entity data encrypted with ChaCha20-Poly1305
 pub struct Storage {
     db: Arc<DB>,
+    keypair: Option<Arc<TenantKeyPair>>,
 }
 
 impl Storage {
-    /// Open database at path with column families.
+    /// Open database at path with column families and optional encryption.
     ///
     /// Creates database and column families if they don't exist.
+    ///
+    /// If `master_password` is provided, enables encryption at rest:
+    /// - Generates new tenant key pair if none exists
+    /// - Loads existing key pair if found
+    /// - Private key encrypted with Argon2-derived key
+    /// - All entity data encrypted with ChaCha20-Poly1305
     ///
     /// # Arguments
     ///
     /// * `path` - Database directory path
+    /// * `master_password` - Optional master password for encryption at rest
     ///
     /// # Returns
     ///
@@ -29,14 +61,21 @@ impl Storage {
     ///
     /// # Errors
     ///
-    /// Returns `DatabaseError::StorageError` if RocksDB fails to open
+    /// Returns error if:
+    /// - RocksDB fails to open
+    /// - Wrong master password (decryption fails)
+    /// - Corrupted key data
     ///
     /// # Example
     ///
     /// ```rust,ignore
-    /// let storage = Storage::open("./data")?;
+    /// // Without encryption
+    /// let storage = Storage::open("./data", None)?;
+    ///
+    /// // With encryption
+    /// let storage = Storage::open("./data", Some("strong_password"))?;
     /// ```
-    pub fn open<P: AsRef<Path>>(path: P) -> Result<Self> {
+    pub fn open<P: AsRef<Path>>(path: P, master_password: Option<&str>) -> Result<Self> {
         let mut opts = rocksdb::Options::default();
         opts.create_if_missing(true);
         opts.create_missing_column_families(true);
@@ -53,20 +92,71 @@ impl Storage {
         let db = DB::open_cf_descriptors(&opts, path, cfs)
             .map_err(|e| DatabaseError::StorageError(e.into()))?;
 
-        Ok(Self {
-            db: Arc::new(db),
-        })
+        let db = Arc::new(db);
+
+        // Load or generate tenant key pair if password provided
+        let keypair = if let Some(password) = master_password {
+            Some(Arc::new(Self::load_or_generate_keypair(&db, password)?))
+        } else {
+            None
+        };
+
+        Ok(Self { db, keypair })
     }
 
-    /// Open database in memory for testing.
+    /// Load existing key pair or generate new one.
+    ///
+    /// # Arguments
+    ///
+    /// * `db` - RocksDB instance
+    /// * `master_password` - Master password for key encryption
     ///
     /// # Returns
     ///
-    /// `Storage` instance with in-memory backend
+    /// `TenantKeyPair` (loaded or newly generated)
+    ///
+    /// # Errors
+    ///
+    /// Returns error if wrong password or corrupted data
+    fn load_or_generate_keypair(db: &Arc<DB>, master_password: &str) -> Result<TenantKeyPair> {
+        let cf = db
+            .cf_handle(CF_KEYS)
+            .ok_or_else(|| DatabaseError::InternalError("CF_KEYS not found".to_string()))?;
+
+        // Try to load existing key
+        if let Some(encrypted_key) = db.get_cf(&cf, b"private_key_encrypted")? {
+            // Decrypt and load
+            let private_key_bytes =
+                crate::crypto::decrypt_private_key(&encrypted_key, master_password)?;
+            return TenantKeyPair::from_private_key_bytes(&private_key_bytes);
+        }
+
+        // Generate new key pair
+        let keypair = TenantKeyPair::generate();
+
+        // Encrypt private key with master password
+        let private_key_bytes = keypair.private_key_bytes();
+        let encrypted = crate::crypto::encrypt_private_key(&private_key_bytes, master_password)?;
+
+        // Store encrypted private key
+        db.put_cf(&cf, b"private_key_encrypted", &encrypted)?;
+
+        // Store public key (unencrypted for sharing)
+        let public_key_bytes = keypair.public_key_bytes();
+        db.put_cf(&cf, b"public_key", &public_key_bytes)?;
+
+        Ok(keypair)
+    }
+
+    /// Open database in temporary directory for testing.
+    ///
+    /// # Returns
+    ///
+    /// `Storage` instance with temporary storage (no encryption)
     pub fn open_temp() -> Result<Self> {
         // Use a temporary directory for testing
         let temp_dir = std::env::temp_dir().join(format!("rem-db-test-{}", uuid::Uuid::new_v4()));
-        Self::open(temp_dir)
+        Self::open(temp_dir, None)
     }
 
     /// Get value from column family.
@@ -240,6 +330,97 @@ impl Storage {
         self.db.compact_range_cf(&cf, None::<&[u8]>, None::<&[u8]>);
         Ok(())
     }
+
+    /// Check if encryption is enabled.
+    ///
+    /// # Returns
+    ///
+    /// `true` if database was opened with a master password
+    pub fn is_encrypted(&self) -> bool {
+        self.keypair.is_some()
+    }
+
+    /// Get tenant public key for sharing.
+    ///
+    /// # Returns
+    ///
+    /// 32-byte Ed25519 public key if encryption enabled, None otherwise
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// if let Some(public_key) = storage.public_key() {
+    ///     // Share public key with other tenants
+    /// }
+    /// ```
+    pub fn public_key(&self) -> Option<[u8; 32]> {
+        self.keypair.as_ref().map(|kp| kp.public_key_bytes())
+    }
+
+    /// Put value with automatic encryption.
+    ///
+    /// If encryption is enabled, encrypts value before storage.
+    ///
+    /// # Arguments
+    ///
+    /// * `cf_name` - Column family name
+    /// * `key` - Key bytes
+    /// * `value` - Value bytes (will be encrypted if encryption enabled)
+    ///
+    /// # Errors
+    ///
+    /// Returns `DatabaseError::StorageError` or `DatabaseError::CryptoError`
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// storage.put_encrypted(CF_ENTITIES, b"key", b"secret data")?;
+    /// ```
+    pub fn put_encrypted(&self, cf_name: &str, key: &[u8], value: &[u8]) -> Result<()> {
+        if let Some(keypair) = &self.keypair {
+            let encrypted = keypair.encrypt(value)?;
+            self.put(cf_name, key, &encrypted)
+        } else {
+            self.put(cf_name, key, value)
+        }
+    }
+
+    /// Get value with automatic decryption.
+    ///
+    /// If encryption is enabled, decrypts value after retrieval.
+    ///
+    /// # Arguments
+    ///
+    /// * `cf_name` - Column family name
+    /// * `key` - Key bytes
+    ///
+    /// # Returns
+    ///
+    /// Decrypted value if found, None otherwise
+    ///
+    /// # Errors
+    ///
+    /// Returns `DatabaseError::StorageError` or `DatabaseError::CryptoError`
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// let data = storage.get_encrypted(CF_ENTITIES, b"key")?;
+    /// ```
+    pub fn get_encrypted(&self, cf_name: &str, key: &[u8]) -> Result<Option<Vec<u8>>> {
+        let value = self.get(cf_name, key)?;
+
+        if let Some(encrypted) = value {
+            if let Some(keypair) = &self.keypair {
+                let decrypted = keypair.decrypt(&encrypted)?;
+                Ok(Some(decrypted))
+            } else {
+                Ok(Some(encrypted))
+            }
+        } else {
+            Ok(None)
+        }
+    }
 }
 
 #[cfg(test)]
@@ -373,5 +554,121 @@ mod tests {
     fn test_invalid_cf() {
         let storage = Storage::open_temp().unwrap();
         storage.cf_handle("nonexistent");
+    }
+
+    #[test]
+    fn test_encryption_disabled_by_default() {
+        let storage = Storage::open_temp().unwrap();
+        assert!(!storage.is_encrypted());
+        assert!(storage.public_key().is_none());
+    }
+
+    #[test]
+    fn test_encryption_enabled_with_password() {
+        let temp_dir = std::env::temp_dir().join(format!("rem-db-enc-{}", uuid::Uuid::new_v4()));
+        let storage = Storage::open(&temp_dir, Some("test_password")).unwrap();
+
+        assert!(storage.is_encrypted());
+        assert!(storage.public_key().is_some());
+
+        std::fs::remove_dir_all(temp_dir).ok();
+    }
+
+    #[test]
+    fn test_encrypt_decrypt_roundtrip() {
+        let temp_dir = std::env::temp_dir().join(format!("rem-db-enc-{}", uuid::Uuid::new_v4()));
+        let storage = Storage::open(&temp_dir, Some("test_password")).unwrap();
+
+        let key = b"test_key";
+        let value = b"secret data";
+
+        // Put encrypted
+        storage.put_encrypted(CF_ENTITIES, key, value).unwrap();
+
+        // Get decrypted
+        let result = storage.get_encrypted(CF_ENTITIES, key).unwrap();
+        assert_eq!(result, Some(value.to_vec()));
+
+        std::fs::remove_dir_all(temp_dir).ok();
+    }
+
+    #[test]
+    fn test_encrypted_data_is_actually_encrypted() {
+        let temp_dir = std::env::temp_dir().join(format!("rem-db-enc-{}", uuid::Uuid::new_v4()));
+        let storage = Storage::open(&temp_dir, Some("test_password")).unwrap();
+
+        let key = b"test_key";
+        let value = b"secret data";
+
+        // Put encrypted
+        storage.put_encrypted(CF_ENTITIES, key, value).unwrap();
+
+        // Raw get should return encrypted data (different from plaintext)
+        let raw = storage.get(CF_ENTITIES, key).unwrap().unwrap();
+        assert_ne!(raw, value);
+
+        std::fs::remove_dir_all(temp_dir).ok();
+    }
+
+    #[test]
+    fn test_key_persistence() {
+        let temp_dir = std::env::temp_dir().join(format!("rem-db-enc-{}", uuid::Uuid::new_v4()));
+
+        let public_key1;
+        {
+            let storage = Storage::open(&temp_dir, Some("test_password")).unwrap();
+            public_key1 = storage.public_key().unwrap();
+
+            storage.put_encrypted(CF_ENTITIES, b"key", b"value").unwrap();
+        }
+
+        // Reopen with same password
+        {
+            let storage = Storage::open(&temp_dir, Some("test_password")).unwrap();
+            let public_key2 = storage.public_key().unwrap();
+
+            // Same key pair should be loaded
+            assert_eq!(public_key1, public_key2);
+
+            // Data should still be accessible
+            let result = storage.get_encrypted(CF_ENTITIES, b"key").unwrap();
+            assert_eq!(result, Some(b"value".to_vec()));
+        }
+
+        std::fs::remove_dir_all(temp_dir).ok();
+    }
+
+    #[test]
+    fn test_wrong_password_fails() {
+        let temp_dir = std::env::temp_dir().join(format!("rem-db-enc-{}", uuid::Uuid::new_v4()));
+
+        {
+            let storage = Storage::open(&temp_dir, Some("correct_password")).unwrap();
+            storage.put_encrypted(CF_ENTITIES, b"key", b"value").unwrap();
+        }
+
+        // Try to open with wrong password
+        let result = Storage::open(&temp_dir, Some("wrong_password"));
+        assert!(result.is_err());
+
+        std::fs::remove_dir_all(temp_dir).ok();
+    }
+
+    #[test]
+    fn test_encryption_without_password_stores_plaintext() {
+        let temp_dir = std::env::temp_dir().join(format!("rem-db-plain-{}", uuid::Uuid::new_v4()));
+        let storage = Storage::open(&temp_dir, None).unwrap();
+
+        let key = b"test_key";
+        let value = b"plaintext data";
+
+        // Put "encrypted" (actually stores plaintext)
+        storage.put_encrypted(CF_ENTITIES, key, value).unwrap();
+
+        // Raw get should return same data
+        let raw = storage.get(CF_ENTITIES, key).unwrap().unwrap();
+        assert_eq!(raw, value);
+
+        std::fs::remove_dir_all(temp_dir).ok();
     }
 }

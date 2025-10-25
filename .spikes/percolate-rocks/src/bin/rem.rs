@@ -206,9 +206,17 @@ enum Commands {
         #[arg(long)]
         all: bool,
 
-        /// Output path
+        /// Output file path
         #[arg(long)]
         output: PathBuf,
+
+        /// Export format: jsonl, csv, parquet
+        #[arg(long, default_value = "jsonl")]
+        format: String,
+
+        /// Include deleted entities
+        #[arg(long)]
+        include_deleted: bool,
     },
 
     /// Start replication server
@@ -236,6 +244,49 @@ enum Commands {
     /// Replication status
     #[command(subcommand)]
     Replication(ReplicationCommands),
+
+    /// REM Dreaming - background intelligence layer
+    Dream {
+        /// Lookback window in hours (default: 24)
+        #[arg(long, default_value = "24")]
+        lookback_hours: u32,
+
+        /// Start date for analysis (ISO 8601)
+        #[arg(long)]
+        start: Option<String>,
+
+        /// End date for analysis (ISO 8601)
+        #[arg(long)]
+        end: Option<String>,
+
+        /// LLM model to use
+        #[arg(long, default_value = "gpt-4-turbo")]
+        llm: String,
+
+        /// Dry run (show what would be generated without writing)
+        #[arg(long)]
+        dry_run: bool,
+
+        /// Summary only (skip moment generation)
+        #[arg(long)]
+        summary_only: bool,
+
+        /// Minimum moment duration in minutes
+        #[arg(long)]
+        min_duration_minutes: Option<u32>,
+
+        /// Output results to file (JSON)
+        #[arg(long)]
+        output: Option<PathBuf>,
+
+        /// Verbose output
+        #[arg(long, short)]
+        verbose: bool,
+
+        /// Debug mode (show LLM prompts)
+        #[arg(long)]
+        debug: bool,
+    },
 }
 
 #[derive(Subcommand)]
@@ -364,8 +415,8 @@ fn main() -> anyhow::Result<()> {
         } => {
             cmd_traverse(&db_path, &uuid, depth, &direction)?;
         }
-        Commands::Export { table, all, output } => {
-            cmd_export(&db_path, table.as_deref(), all, &output)?;
+        Commands::Export { table, all, output, format, include_deleted } => {
+            cmd_export(&db_path, table.as_deref(), all, &output, &format, include_deleted)?;
         }
         Commands::Serve { host, port } => {
             cmd_serve(&db_path, &host, port)?;
@@ -380,6 +431,33 @@ fn main() -> anyhow::Result<()> {
             ReplicationCommands::Status => {
                 cmd_replication_status(&db_path)?;
             }
+        },
+
+        Commands::Dream {
+            lookback_hours,
+            start,
+            end,
+            llm,
+            dry_run,
+            summary_only,
+            min_duration_minutes,
+            output,
+            verbose,
+            debug,
+        } => {
+            cmd_dream(
+                &db_path,
+                lookback_hours,
+                start.as_deref(),
+                end.as_deref(),
+                &llm,
+                dry_run,
+                summary_only,
+                min_duration_minutes,
+                output.as_ref(),
+                verbose,
+                debug,
+            )?;
         },
     }
 
@@ -811,43 +889,381 @@ fn cmd_schema_templates() -> anyhow::Result<()> {
     Ok(())
 }
 
-fn cmd_ingest(_db_path: &PathBuf, file: &PathBuf, schema: &str) -> anyhow::Result<()> {
-    println!("Ingest not yet implemented");
-    println!("  File: {}", file.display());
-    println!("  Schema: {}", schema);
-    println!("\nRequires: document chunker, PDF parser");
+fn cmd_ingest(db_path: &PathBuf, file: &PathBuf, schema: &str) -> anyhow::Result<()> {
+    use std::io::{BufRead, BufReader};
+    use std::fs::File;
+
+    let db = Database::open(db_path)?;
+
+    // Verify schema exists
+    if !db.has_schema(schema) {
+        anyhow::bail!("Schema '{}' not found. Register it first with 'rem schema add'", schema);
+    }
+
+    // Determine file type
+    let extension = file.extension().and_then(|e| e.to_str()).unwrap_or("");
+
+    match extension {
+        "jsonl" | "ndjson" => {
+            println!("Ingesting JSONL file: {}", file.display());
+
+            let file_handle = File::open(file)?;
+            let reader = BufReader::new(file_handle);
+
+            let mut count = 0;
+            let mut errors = 0;
+
+            for (line_num, line) in reader.lines().enumerate() {
+                let line = line?;
+
+                // Skip empty lines
+                if line.trim().is_empty() {
+                    continue;
+                }
+
+                // Parse JSON
+                match serde_json::from_str::<serde_json::Value>(&line) {
+                    Ok(data) => {
+                        // Insert entity
+                        match db.insert("default", schema, data) {
+                            Ok(id) => {
+                                count += 1;
+                                if count % 100 == 0 {
+                                    println!("  Inserted {} entities...", count);
+                                }
+                            }
+                            Err(e) => {
+                                eprintln!("  Error on line {}: {}", line_num + 1, e);
+                                errors += 1;
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        eprintln!("  Invalid JSON on line {}: {}", line_num + 1, e);
+                        errors += 1;
+                    }
+                }
+            }
+
+            println!("\n✓ Ingestion complete");
+            println!("  Total inserted: {}", count);
+            if errors > 0 {
+                println!("  Errors: {}", errors);
+            }
+            println!("  Schema: {}", schema);
+        }
+        "json" => {
+            println!("Ingesting JSON array file: {}", file.display());
+
+            let file_content = std::fs::read_to_string(file)?;
+            let items: Vec<serde_json::Value> = serde_json::from_str(&file_content)?;
+
+            let mut count = 0;
+            let mut errors = 0;
+
+            for (idx, item) in items.iter().enumerate() {
+                match db.insert("default", schema, item.clone()) {
+                    Ok(_) => {
+                        count += 1;
+                        if count % 100 == 0 {
+                            println!("  Inserted {} entities...", count);
+                        }
+                    }
+                    Err(e) => {
+                        eprintln!("  Error on item {}: {}", idx, e);
+                        errors += 1;
+                    }
+                }
+            }
+
+            println!("\n✓ Ingestion complete");
+            println!("  Total inserted: {}", count);
+            if errors > 0 {
+                println!("  Errors: {}", errors);
+            }
+            println!("  Schema: {}", schema);
+        }
+        _ => {
+            anyhow::bail!(
+                "Unsupported file format: '{}'. Supported: .jsonl, .ndjson, .json",
+                extension
+            );
+        }
+    }
+
     Ok(())
 }
 
 fn cmd_search(
-    _db_path: &PathBuf,
+    db_path: &PathBuf,
     query: &str,
     schema: &str,
     top_k: usize,
 ) -> anyhow::Result<()> {
-    println!("Semantic search not yet implemented");
-    println!("  Query: {}", query);
-    println!("  Schema: {}", schema);
-    println!("  Top-K: {}", top_k);
-    println!("\nRequires: HNSW vector index, embedding provider");
-    Ok(())
+    let rt = tokio::runtime::Runtime::new()?;
+    rt.block_on(async {
+        let db = Database::open(db_path)?;
+
+        // Perform semantic search
+        let results = db.search("default", schema, query, top_k).await?;
+
+        if results.is_empty() {
+            println!("No results found");
+            return Ok(());
+        }
+
+        println!("Found {} result(s) for: {}", results.len(), query);
+        println!();
+
+        for (i, (entity, score)) in results.iter().enumerate() {
+            println!("{}. Score: {:.4}", i + 1, score);
+            println!("   ID: {}", entity.system.id);
+            println!("   Type: {}", entity.system.entity_type);
+            println!("   Created: {}", entity.system.created_at);
+
+            // Show key properties
+            if let Some(name) = entity.properties.get("name") {
+                println!("   Name: {}", name.as_str().unwrap_or(""));
+            }
+            if let Some(content) = entity.properties.get("content") {
+                let content_str = content.as_str().unwrap_or("");
+                let preview = if content_str.len() > 100 {
+                    format!("{}...", &content_str[..100])
+                } else {
+                    content_str.to_string()
+                };
+                println!("   Content: {}", preview);
+            }
+            println!();
+        }
+
+        Ok(())
+    })
 }
 
 fn cmd_query(db_path: &PathBuf, sql: &str) -> anyhow::Result<()> {
-    let db = Database::open(db_path)?;
-    let results = db.query_sql("default", sql)?;
+    use percolate_rocks::query::{parse_extended_query, ExtendedQuery};
 
-    // Format and display results
-    println!("{}", serde_json::to_string_pretty(&results)?);
-    Ok(())
+    let rt = tokio::runtime::Runtime::new()?;
+    rt.block_on(async {
+        let db = Database::open(db_path)?;
+
+        // Parse and execute extended SQL syntax
+        match parse_extended_query(sql) {
+            Ok(ExtendedQuery::KeyLookup(lookup)) => {
+                // Execute key lookups
+                println!("Executing key lookup for {} key(s)", lookup.keys.len());
+                println!();
+
+                for key in &lookup.keys {
+                    cmd_lookup(db_path, key)?;
+                }
+            }
+            Ok(ExtendedQuery::Search(search)) => {
+                // Execute semantic search
+                println!("Executing semantic search: {}", search.query);
+                println!("  Table: {}", search.table);
+                println!("  Limit: {}", search.limit);
+                println!();
+
+                let results = db.search("default", &search.table, &search.query, search.limit).await?;
+
+                if results.is_empty() {
+                    println!("No results found");
+                } else {
+                    println!("Found {} result(s)", results.len());
+                    println!();
+
+                    for (i, (entity, score)) in results.iter().enumerate() {
+                        println!("{}. Score: {:.4}", i + 1, score);
+                        println!("   ID: {}", entity.system.id);
+                        println!("   Type: {}", entity.system.entity_type);
+
+                        if let Some(name) = entity.properties.get("name") {
+                            println!("   Name: {}", name.as_str().unwrap_or(""));
+                        }
+                        if let Some(content) = entity.properties.get("content") {
+                            let content_str = content.as_str().unwrap_or("");
+                            let preview = if content_str.len() > 150 {
+                                format!("{}...", &content_str[..150])
+                            } else {
+                                content_str.to_string()
+                            };
+                            println!("   Content: {}", preview);
+                        }
+                        println!();
+                    }
+                }
+            }
+            Ok(ExtendedQuery::Traverse(traverse)) => {
+                // Execute graph traversal
+                use percolate_rocks::graph::TraversalDirection;
+
+                println!("Executing graph traversal from: {}", traverse.start_uuid);
+                println!("  Depth: {}", traverse.depth);
+                println!("  Direction: {:?}", traverse.direction);
+                if let Some(ref rel_type) = traverse.rel_type {
+                    println!("  Type filter: {}", rel_type);
+                }
+                println!();
+
+                let start_id = uuid::Uuid::parse_str(&traverse.start_uuid)?;
+                let direction = match traverse.direction {
+                    percolate_rocks::query::TraverseDirection::Out => TraversalDirection::Out,
+                    percolate_rocks::query::TraverseDirection::In => TraversalDirection::In,
+                    percolate_rocks::query::TraverseDirection::Both => TraversalDirection::Both,
+                };
+
+                let nodes = db.traverse_bfs(start_id, direction, traverse.depth, traverse.rel_type.as_deref())?;
+
+                println!("Found {} node(s)", nodes.len());
+                println!();
+
+                for (i, node_id) in nodes.iter().enumerate() {
+                    if let Some(entity) = db.get("default", *node_id)? {
+                        println!("{}. ID: {}", i + 1, node_id);
+                        println!("   Type: {}", entity.system.entity_type);
+
+                        if let Some(name) = entity.properties.get("name") {
+                            println!("   Name: {}", name.as_str().unwrap_or(""));
+                        }
+                    } else {
+                        println!("{}. ID: {} (entity not found)", i + 1, node_id);
+                    }
+                    println!();
+                }
+            }
+            Ok(ExtendedQuery::Sql(sql_query)) => {
+                // Execute standard SQL
+                let results = db.query_sql("default", &sql_query)?;
+                println!("{}", serde_json::to_string_pretty(&results)?);
+            }
+            Err(e) => {
+                anyhow::bail!("Query parsing failed: {}", e);
+            }
+        }
+
+        Ok(())
+    })
 }
 
-fn cmd_ask(_db_path: &PathBuf, question: &str, plan: bool) -> anyhow::Result<()> {
-    println!("Natural language query not yet implemented");
-    println!("  Question: {}", question);
-    println!("  Plan only: {}", plan);
-    println!("\nRequires: LLM query builder, OpenAI API");
-    Ok(())
+fn cmd_ask(db_path: &PathBuf, question: &str, plan: bool) -> anyhow::Result<()> {
+    use percolate_rocks::llm::query_builder::LlmQueryBuilder;
+
+    let rt = tokio::runtime::Runtime::new()?;
+    rt.block_on(async {
+        let db = Database::open(db_path)?;
+
+        // Build query builder from environment
+        let query_builder = LlmQueryBuilder::from_env()
+            .map_err(|e| anyhow::anyhow!("Failed to create query builder: {}", e))?;
+
+        // Get schema context
+        let schemas = db.list_schemas()?;
+        let schema_context = format!("Available schemas: {}", schemas.join(", "));
+
+        // Plan query
+        let query_plan = query_builder.plan_query(question, &schema_context).await
+            .map_err(|e| anyhow::anyhow!("Query planning failed: {}", e))?;
+
+        if plan {
+            // Show plan only
+            println!("Query Plan:");
+            println!("  Intent: {:?}", query_plan.intent);
+            println!("  Query: {}", query_plan.query);
+            println!("  Confidence: {:.2}", query_plan.confidence);
+            println!("  Reasoning: {}", query_plan.reasoning);
+            if let Some(explanation) = &query_plan.explanation {
+                println!("  Explanation: {}", explanation);
+            }
+            println!("  Requires search: {}", query_plan.requires_search);
+            println!("  Parameters: {}", serde_json::to_string_pretty(&query_plan.parameters)?);
+            if !query_plan.next_steps.is_empty() {
+                println!("  Next steps:");
+                for step in &query_plan.next_steps {
+                    println!("    - {}", step);
+                }
+            }
+            return Ok(());
+        }
+
+        // Execute query
+        println!("Executing query: {}", query_plan.query);
+        println!();
+
+        // Detect query type and execute
+        use percolate_rocks::query::{parse_extended_query, ExtendedQuery};
+
+        match parse_extended_query(&query_plan.query) {
+            Ok(ExtendedQuery::KeyLookup(lookup)) => {
+                // Execute key lookup
+                for key in &lookup.keys {
+                    cmd_lookup(db_path, key)?;
+                }
+            }
+            Ok(ExtendedQuery::Search(search)) => {
+                // Execute semantic search
+                let results = db.search("default", &search.table, &search.query, search.limit).await?;
+
+                if results.is_empty() {
+                    println!("No results found");
+                } else {
+                    println!("Found {} result(s)", results.len());
+                    println!();
+
+                    for (i, (entity, score)) in results.iter().enumerate() {
+                        println!("{}. Score: {:.4}", i + 1, score);
+                        println!("   ID: {}", entity.system.id);
+                        println!("   Type: {}", entity.system.entity_type);
+
+                        if let Some(name) = entity.properties.get("name") {
+                            println!("   Name: {}", name.as_str().unwrap_or(""));
+                        }
+                        if let Some(content) = entity.properties.get("content") {
+                            let content_str = content.as_str().unwrap_or("");
+                            let preview = if content_str.len() > 100 {
+                                format!("{}...", &content_str[..100])
+                            } else {
+                                content_str.to_string()
+                            };
+                            println!("   Content: {}", preview);
+                        }
+                        println!();
+                    }
+                }
+            }
+            Ok(ExtendedQuery::Traverse(traverse)) => {
+                // Execute graph traversal
+                use percolate_rocks::graph::TraversalDirection;
+
+                let start_id = uuid::Uuid::parse_str(&traverse.start_uuid)?;
+                let direction = match traverse.direction {
+                    percolate_rocks::query::TraverseDirection::Out => TraversalDirection::Out,
+                    percolate_rocks::query::TraverseDirection::In => TraversalDirection::In,
+                    percolate_rocks::query::TraverseDirection::Both => TraversalDirection::Both,
+                };
+
+                let nodes = db.traverse_bfs(start_id, direction, traverse.depth, traverse.rel_type.as_deref())?;
+
+                println!("Found {} node(s)", nodes.len());
+                for (i, node_id) in nodes.iter().enumerate() {
+                    if let Some(entity) = db.get("default", *node_id)? {
+                        println!("{}. ID: {} ({})", i + 1, node_id, entity.system.entity_type);
+                    }
+                }
+            }
+            Ok(ExtendedQuery::Sql(sql)) => {
+                // Execute SQL query
+                let results = db.query_sql("default", &sql)?;
+                println!("{}", serde_json::to_string_pretty(&results)?);
+            }
+            Err(e) => {
+                println!("Failed to parse query: {}", e);
+            }
+        }
+
+        Ok(())
+    })
 }
 
 fn cmd_traverse(
@@ -904,18 +1320,63 @@ fn cmd_traverse(
 }
 
 fn cmd_export(
-    _db_path: &PathBuf,
+    db_path: &PathBuf,
     table: Option<&str>,
     all: bool,
     output: &PathBuf,
+    format: &str,
+    include_deleted: bool,
 ) -> anyhow::Result<()> {
-    println!("Export not yet implemented");
-    if let Some(t) = table {
-        println!("  Table: {}", t);
+    use percolate_rocks::export::{JsonlExporter, CsvExporter, ParquetExporter};
+
+    let db = Database::open(db_path)?;
+
+    // Determine which tables to export
+    let tables_to_export: Vec<String> = if all {
+        db.list_schemas()?
+    } else if let Some(t) = table {
+        vec![t.to_string()]
+    } else {
+        anyhow::bail!("Must specify --table or --all");
+    };
+
+    // Collect entities from all specified tables
+    let mut all_entities = Vec::new();
+
+    for table_name in &tables_to_export {
+        let entities = db.list("default", table_name, include_deleted, None)?;
+        all_entities.extend(entities);
     }
-    println!("  All: {}", all);
-    println!("  Output: {}", output.display());
-    println!("\nRequires: Parquet writer");
+
+    println!("Exporting {} entities from {} table(s) to {}",
+        all_entities.len(),
+        tables_to_export.len(),
+        output.display()
+    );
+
+    // Export based on format
+    match format.to_lowercase().as_str() {
+        "jsonl" | "json" => {
+            JsonlExporter::export(&all_entities, output)?;
+            println!("✓ Exported to JSONL format");
+        }
+        "csv" => {
+            CsvExporter::export(&all_entities, output)?;
+            println!("✓ Exported to CSV format");
+        }
+        "tsv" => {
+            CsvExporter::export_with_delimiter(&all_entities, output, b'\t')?;
+            println!("✓ Exported to TSV format");
+        }
+        "parquet" => {
+            ParquetExporter::export(&all_entities, output)?;
+            println!("✓ Exported to Parquet format with ZSTD compression");
+        }
+        _ => {
+            anyhow::bail!("Unsupported format: {}. Use: jsonl, csv, tsv, or parquet", format);
+        }
+    }
+
     Ok(())
 }
 
@@ -944,5 +1405,73 @@ fn cmd_replication_wal_status(_db_path: &PathBuf) -> anyhow::Result<()> {
 fn cmd_replication_status(_db_path: &PathBuf) -> anyhow::Result<()> {
     println!("Replication status not yet implemented");
     println!("Requires: replication state machine");
+    Ok(())
+}
+
+#[allow(clippy::too_many_arguments)]
+fn cmd_dream(
+    db_path: &PathBuf,
+    lookback_hours: u32,
+    start: Option<&str>,
+    end: Option<&str>,
+    llm: &String,
+    dry_run: bool,
+    summary_only: bool,
+    min_duration_minutes: Option<u32>,
+    output: Option<&PathBuf>,
+    verbose: bool,
+    debug: bool,
+) -> anyhow::Result<()> {
+    // use percolate_rocks::dreaming;  // TODO: Implement dreaming module
+
+    println!("🌙 REM Dreaming - Background Intelligence Layer");
+    println!();
+
+    if verbose {
+        println!("Configuration:");
+        println!("  Database: {}", db_path.display());
+        println!("  Lookback: {} hours", lookback_hours);
+        if let Some(s) = start {
+            println!("  Start: {}", s);
+        }
+        if let Some(e) = end {
+            println!("  End: {}", e);
+        }
+        println!("  LLM: {}", llm);
+        println!("  Dry run: {}", dry_run);
+        println!("  Summary only: {}", summary_only);
+        if let Some(min) = min_duration_minutes {
+            println!("  Min duration: {} minutes", min);
+        }
+        println!();
+    }
+
+    // TODO: Implement dreaming process
+    println!("⚠ Dreaming feature not yet implemented");
+    println!("  This will analyze activity patterns and create:");
+    println!("  - Moments (temporal classifications)");
+    println!("  - Automatic relationship edges");
+    println!("  - LLM-generated summaries");
+    println!();
+    println!("  Parameters configured:");
+    println!("    Lookback: {} hours", lookback_hours);
+    if let Some(s) = start {
+        println!("    Start: {}", s);
+    }
+    if let Some(e) = end {
+        println!("    End: {}", e);
+    }
+    println!("    LLM: {}", llm);
+    println!("    Dry run: {}", dry_run);
+    println!("    Summary only: {}", summary_only);
+    if let Some(min_dur) = min_duration_minutes {
+        println!("    Min duration: {} minutes", min_dur);
+    }
+
+    if let Some(_output_path) = output {
+        println!();
+        println!("  (Results would be saved to: {})", _output_path.display());
+    }
+
     Ok(())
 }

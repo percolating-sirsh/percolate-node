@@ -1,0 +1,60 @@
+{
+  "title": "Message",
+  "description": "Individual message within a session. Messages capture user queries, agent responses, and tool calls. Used by REM Dreaming to understand conversational context and generate summaries.",
+  "version": "1.0.0",
+  "short_name": "messages",
+  "name": "rem.core.Message",
+
+  "json_schema_extra": {
+    "category": "system",
+    "indexed_fields": ["session_id", "role", "trace_id", "created_at"],
+    "embedding_fields": ["content"],
+    "embedding_provider": "default"
+  },
+
+  "properties": {
+    "session_id": {
+      "type": "string",
+      "format": "uuid",
+      "description": "Reference to parent session"
+    },
+    "role": {
+      "type": "string",
+      "enum": ["user", "assistant", "system", "tool"],
+      "description": "Message role in conversation"
+    },
+    "content": {
+      "type": "string",
+      "description": "Message content (text, JSON, or structured data)"
+    },
+    "tool_calls": {
+      "type": "array",
+      "description": "Tool invocations made during this message",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {"type": "string"},
+          "name": {"type": "string"},
+          "arguments": {"type": "object"}
+        }
+      },
+      "default": []
+    },
+    "trace_id": {
+      "type": "string",
+      "description": "OpenTelemetry trace ID for observability"
+    },
+    "span_id": {
+      "type": "string",
+      "description": "OpenTelemetry span ID for observability"
+    },
+    "metadata": {
+      "type": "object",
+      "description": "Message metadata (e.g., model used, tokens, latency)",
+      "default": {},
+      "additionalProperties": true
+    }
+  },
+
+  "required": ["session_id", "role", "content"]
+}

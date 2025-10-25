@@ -94,10 +94,23 @@ pub enum DatabaseError {
     #[error("Configuration error: {0}")]
     ConfigError(String),
 
+    /// Cryptography error (encryption/decryption/key management)
+    #[error("Cryptography error: {0}")]
+    CryptoError(String),
+
     /// Internal error (should not happen)
     #[error("Internal error: {0}")]
     InternalError(String),
+
+    /// Feature not yet implemented
+    #[error("Not implemented: {0}")]
+    NotImplemented(String),
 }
+
+/// Result type alias for database operations.
+///
+/// This is a convenience type that uses `DatabaseError` as the error type.
+pub type Result<T> = std::result::Result<T, DatabaseError>;
 
 impl DatabaseError {
     /// Create a validation error with context.

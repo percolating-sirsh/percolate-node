@@ -1,0 +1,87 @@
+{
+  "title": "Moment",
+  "description": "Temporal classification of user activity and content. Moments are time-bound periods with semantic tags describing what the user was thinking about, working on, or experiencing. Generated automatically by REM Dreaming from resources and sessions.",
+  "version": "1.0.0",
+  "short_name": "moments",
+  "name": "rem.core.Moment",
+
+  "json_schema_extra": {
+    "category": "system",
+    "indexed_fields": ["start_time", "end_time", "moment_type"],
+    "embedding_fields": ["summary", "tags"],
+    "embedding_provider": "default",
+    "key_field": "name"
+  },
+
+  "properties": {
+    "name": {
+      "type": "string",
+      "description": "Moment name or title (e.g., 'Morning planning session', 'Deep work on DiskANN')",
+      "maxLength": 200
+    },
+    "summary": {
+      "type": "string",
+      "description": "Concise summary of the moment (1-3 sentences describing activity, themes, and outcomes)"
+    },
+    "start_time": {
+      "type": "string",
+      "format": "date-time",
+      "description": "Moment start timestamp (ISO 8601)"
+    },
+    "end_time": {
+      "type": "string",
+      "format": "date-time",
+      "description": "Moment end timestamp (ISO 8601)"
+    },
+    "moment_type": {
+      "type": "string",
+      "enum": ["work_session", "learning", "planning", "communication", "reflection", "creation", "other"],
+      "description": "Type of activity during this moment"
+    },
+    "tags": {
+      "type": "array",
+      "items": {"type": "string"},
+      "description": "Semantic tags describing topics, themes, and concepts (e.g., ['rust', 'database', 'performance'])",
+      "default": []
+    },
+    "emotion_tags": {
+      "type": "array",
+      "items": {"type": "string"},
+      "description": "Emotion or tone tags (e.g., ['focused', 'frustrated', 'excited', 'productive'])",
+      "default": []
+    },
+    "people": {
+      "type": "array",
+      "items": {"type": "string"},
+      "description": "People mentioned or involved during this moment",
+      "default": []
+    },
+    "resource_ids": {
+      "type": "array",
+      "items": {"type": "string", "format": "uuid"},
+      "description": "UUIDs of resources (documents, audio logs) associated with this moment",
+      "default": []
+    },
+    "session_ids": {
+      "type": "array",
+      "items": {"type": "string", "format": "uuid"},
+      "description": "UUIDs of sessions (conversations) associated with this moment",
+      "default": []
+    },
+    "metadata": {
+      "type": "object",
+      "description": "Additional moment metadata (e.g., location, device, energy level)",
+      "default": {},
+      "properties": {
+        "location": {"type": "string"},
+        "device": {"type": "string"},
+        "energy_level": {"type": "string", "enum": ["low", "medium", "high"]},
+        "focus_level": {"type": "string", "enum": ["distracted", "moderate", "deep"]},
+        "confidence_score": {"type": "number", "minimum": 0, "maximum": 1}
+      },
+      "additionalProperties": true
+    }
+  },
+
+  "required": ["name", "summary", "start_time", "end_time", "moment_type"]
+}

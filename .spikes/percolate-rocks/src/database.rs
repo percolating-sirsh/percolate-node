@@ -37,8 +37,8 @@ impl Database {
     /// let db = Database::open("./data")?;
     /// ```
     pub fn open<P: AsRef<Path>>(path: P) -> Result<Self> {
-        // Open storage layer
-        let storage = Arc::new(Storage::open(path)?);
+        // Open storage layer (no encryption by default)
+        let storage = Arc::new(Storage::open(path, None)?);
 
         // Initialize schema registry
         let mut registry = SchemaRegistry::new();
@@ -1239,6 +1239,131 @@ impl Database {
 
         // Execute query
         crate::query::executor::execute_query(&statement, entities)
+    }
+
+    /// Semantic search using vector similarity.
+    ///
+    /// # Arguments
+    ///
+    /// * `tenant_id` - Tenant identifier
+    /// * `table` - Schema/table name
+    /// * `query` - Search query text
+    /// * `top_k` - Number of results to return
+    ///
+    /// # Returns
+    ///
+    /// Vector of `(Entity, similarity_score)` tuples, sorted by relevance
+    ///
+    /// # Errors
+    ///
+    /// Returns error if:
+    /// - Schema not found
+    /// - Schema doesn't have embeddings configured
+    /// - Embedding generation fails
+    /// - HNSW index not built
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// let results = db.search("tenant1", "articles", "rust programming", 10).await?;
+    /// for (entity, score) in results {
+    ///     println!("Score: {:.4}, Title: {:?}", score, entity.properties.get("title"));
+    /// }
+    /// ```
+    pub async fn search(
+        &self,
+        tenant_id: &str,
+        table: &str,
+        query: &str,
+        top_k: usize,
+    ) -> Result<Vec<(Entity, f32)>> {
+        use crate::embeddings::provider::{EmbeddingProvider, ProviderFactory};
+        use crate::schema::PydanticSchemaParser;
+
+        // 1. Get schema and verify it has embedding_fields configured
+        let schema = self.get_schema(table)?;
+
+        let embedding_fields = PydanticSchemaParser::extract_embedding_fields(&schema);
+        if embedding_fields.is_empty() {
+            return Err(DatabaseError::SearchError(
+                format!("Schema '{}' does not have embedding_fields configured", table)
+            ));
+        }
+
+        // 2. Determine embedding provider from schema
+        let provider_config = schema
+            .get("json_schema_extra")
+            .and_then(|extra| extra.get("embedding_provider"))
+            .and_then(|p| p.as_str())
+            .unwrap_or("default");
+
+        // 3. Resolve "default" to actual provider from environment
+        let provider_str = if provider_config == "default" {
+            std::env::var("P8_DEFAULT_EMBEDDING")
+                .unwrap_or_else(|_| "local:all-MiniLM-L6-v2".to_string())
+        } else {
+            provider_config.to_string()
+        };
+
+        // 4. Create embedding provider
+        let provider = ProviderFactory::create(&provider_str)?;
+
+        // 4. Generate embedding for query
+        let query_embedding = provider.embed(query).await?;
+        let dimensions = query_embedding.len();
+
+        // 5. Get HNSW index for this table
+        // For now, we'll build the index on-the-fly from all entities
+        // In production, this should be maintained incrementally
+        let entities = self.list(tenant_id, table, false, None)?;
+
+        if entities.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        // 6. Build HNSW index from entities with embeddings
+        let mut index = crate::index::hnsw::HnswIndex::new(dimensions, entities.len());
+        let mut entity_vectors = Vec::new();
+
+        for entity in &entities {
+            // Get embedding from entity properties
+            if let Some(embedding_value) = entity.properties.get("embedding") {
+                if let Some(embedding_array) = embedding_value.as_array() {
+                    let embedding: Vec<f32> = embedding_array
+                        .iter()
+                        .filter_map(|v| v.as_f64().map(|f| f as f32))
+                        .collect();
+
+                    if embedding.len() == dimensions {
+                        entity_vectors.push((entity.system.id, embedding));
+                    }
+                }
+            }
+        }
+
+        if entity_vectors.is_empty() {
+            return Err(DatabaseError::SearchError(
+                format!("No entities in '{}' have embeddings. Insert entities with embedding_fields configured.", table)
+            ));
+        }
+
+        // Build the index
+        index.build_from_vectors(entity_vectors).await?;
+
+        // 7. Search HNSW index for similar vectors
+        let search_results = index.search(&query_embedding, top_k).await?;
+
+        // 8. Retrieve entities and return with scores
+        let mut results = Vec::new();
+        for (entity_id, distance) in search_results {
+            if let Some(entity) = self.get(tenant_id, entity_id)? {
+                // Convert distance to similarity score (1 - cosine distance)
+                let similarity = 1.0 - distance;
+                results.push((entity, similarity));
+            }
+        }
+
+        Ok(results)
     }
 }
 

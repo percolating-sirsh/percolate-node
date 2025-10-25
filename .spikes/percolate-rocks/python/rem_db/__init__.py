@@ -4,23 +4,17 @@ This is a thin Python wrapper over the Rust core implementation.
 All heavy operations are delegated to Rust for performance.
 """
 
-from rem_db._rust import Database as _RustDatabase
-from rem_db.models import Entity, Edge, SearchResult, QueryPlan
-from rem_db.async_api import AsyncDatabase
+# Expose Rust bindings directly for now
+from rem_db._rust import Database
 
 __version__ = "0.1.0"
 
 __all__ = [
     "Database",
-    "AsyncDatabase",
-    "Entity",
-    "Edge",
-    "SearchResult",
-    "QueryPlan",
 ]
 
-
-class Database:
+# Legacy wrapper class - keeping for future expansion
+class _DatabaseWrapper:
     """REM database interface.
 
     Thin wrapper over Rust implementation for synchronous operations.

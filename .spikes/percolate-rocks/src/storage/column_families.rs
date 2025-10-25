@@ -25,6 +25,12 @@ pub const CF_INDEXES: &str = "indexes";
 /// Write-ahead log for replication
 pub const CF_WAL: &str = "wal";
 
+/// Tenant encryption keys (encrypted private keys, public keys)
+pub const CF_KEYS: &str = "keys";
+
+/// BM25 keyword search index for fuzzy key lookups
+pub const CF_BM25_INDEX: &str = "bm25_index";
+
 /// Get all column family names.
 ///
 /// # Returns
@@ -39,6 +45,8 @@ pub fn all_column_families() -> Vec<&'static str> {
         CF_EMBEDDINGS,
         CF_INDEXES,
         CF_WAL,
+        CF_KEYS,
+        CF_BM25_INDEX,
     ]
 }
 
@@ -56,6 +64,8 @@ pub fn create_column_family_descriptors() -> Vec<ColumnFamilyDescriptor> {
         ColumnFamilyDescriptor::new(CF_EMBEDDINGS, embedding_cf_options()),
         ColumnFamilyDescriptor::new(CF_INDEXES, index_cf_options()),
         ColumnFamilyDescriptor::new(CF_WAL, entity_cf_options()),
+        ColumnFamilyDescriptor::new(CF_KEYS, entity_cf_options()),
+        ColumnFamilyDescriptor::new(CF_BM25_INDEX, index_cf_options()),
     ]
 }
 
@@ -133,7 +143,7 @@ mod tests {
     fn test_all_column_families() {
         let cfs = all_column_families();
 
-        assert_eq!(cfs.len(), 7);
+        assert_eq!(cfs.len(), 8);
         assert!(cfs.contains(&CF_ENTITIES));
         assert!(cfs.contains(&CF_KEY_INDEX));
         assert!(cfs.contains(&CF_EDGES));
@@ -141,13 +151,14 @@ mod tests {
         assert!(cfs.contains(&CF_EMBEDDINGS));
         assert!(cfs.contains(&CF_INDEXES));
         assert!(cfs.contains(&CF_WAL));
+        assert!(cfs.contains(&CF_KEYS));
     }
 
     #[test]
     fn test_column_family_descriptors() {
         let descriptors = create_column_family_descriptors();
 
-        assert_eq!(descriptors.len(), 7);
+        assert_eq!(descriptors.len(), 8);
 
         // Verify all CFs have descriptors
         let names: Vec<_> = descriptors.iter().map(|d| d.name()).collect();
@@ -158,6 +169,7 @@ mod tests {
         assert!(names.contains(&CF_EMBEDDINGS));
         assert!(names.contains(&CF_INDEXES));
         assert!(names.contains(&CF_WAL));
+        assert!(names.contains(&CF_KEYS));
     }
 
     #[test]

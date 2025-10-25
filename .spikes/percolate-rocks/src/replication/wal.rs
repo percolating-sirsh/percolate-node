@@ -2,6 +2,21 @@
 //!
 //! WAL stores all write operations for replication and crash recovery.
 //! Entries are stored in RocksDB WAL column family with sequence numbers as keys.
+//!
+//! # Encryption (TODO)
+//!
+//! **Current**: WAL entries stored unencrypted
+//!
+//! **Planned**:
+//! - WAL entries encrypted before storage and replication
+//! - Encryption key derived from tenant's key pair
+//! - Ensures WAL is encrypted at rest and in transit
+//! - Replica nodes must have same tenant key pair to decrypt
+//!
+//! **Replication Security**:
+//! - gRPC stream protected by mTLS (transport layer)
+//! - WAL entries encrypted (application layer)
+//! - Defense in depth: even if TLS compromised, data remains encrypted
 
 use crate::storage::column_families::CF_WAL;
 use crate::storage::Storage;
@@ -316,7 +331,7 @@ mod tests {
 
     #[test]
     fn test_wal_new_empty() {
-        let storage = Storage::open_temp("wal_new").unwrap();
+        let storage = Storage::open_temp().unwrap();
         let wal = WriteAheadLog::new(storage).unwrap();
 
         assert_eq!(wal.current_position(), 0);
@@ -324,7 +339,7 @@ mod tests {
 
     #[test]
     fn test_wal_append() {
-        let storage = Storage::open_temp("wal_append").unwrap();
+        let storage = Storage::open_temp().unwrap();
         let mut wal = WriteAheadLog::new(storage).unwrap();
 
         let op = WalOperation::Insert {
@@ -339,7 +354,7 @@ mod tests {
 
     #[test]
     fn test_wal_get() {
-        let storage = Storage::open_temp("wal_get").unwrap();
+        let storage = Storage::open_temp().unwrap();
         let mut wal = WriteAheadLog::new(storage).unwrap();
 
         let op = WalOperation::Insert {
@@ -356,7 +371,7 @@ mod tests {
 
     #[test]
     fn test_wal_get_entries_after() {
-        let storage = Storage::open_temp("wal_after").unwrap();
+        let storage = Storage::open_temp().unwrap();
         let mut wal = WriteAheadLog::new(storage).unwrap();
 
         // Insert 10 entries
@@ -377,7 +392,7 @@ mod tests {
 
     #[test]
     fn test_wal_get_entries_after_with_limit() {
-        let storage = Storage::open_temp("wal_limit").unwrap();
+        let storage = Storage::open_temp().unwrap();
         let mut wal = WriteAheadLog::new(storage).unwrap();
 
         // Insert 10 entries
@@ -398,7 +413,7 @@ mod tests {
 
     #[test]
     fn test_wal_compact() {
-        let storage = Storage::open_temp("wal_compact").unwrap();
+        let storage = Storage::open_temp().unwrap();
         let mut wal = WriteAheadLog::new(storage).unwrap();
 
         // Insert 10 entries
@@ -430,7 +445,7 @@ mod tests {
 
         // Create WAL and append entries
         {
-            let storage = Storage::open(&path_str).unwrap();
+            let storage = Storage::open(&path_str, None).unwrap();
             let mut wal = WriteAheadLog::new(storage).unwrap();
 
             for i in 0..5 {
@@ -444,7 +459,7 @@ mod tests {
 
         // Reopen and verify sequence number is restored
         {
-            let storage = Storage::open(&path_str).unwrap();
+            let storage = Storage::open(&path_str, None).unwrap();
             let wal = WriteAheadLog::new(storage).unwrap();
 
             assert_eq!(wal.current_position(), 5);
