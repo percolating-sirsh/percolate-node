@@ -4,7 +4,7 @@
 
 use crate::schema::{SchemaRegistry, register_builtin_schemas};
 use crate::storage::Storage;
-use crate::types::{Result, Entity};
+use crate::types::{Result, Entity, Edge, DatabaseError};
 use std::path::Path;
 use std::sync::{Arc, RwLock};
 
@@ -712,6 +712,228 @@ impl Database {
         )?;
 
         Ok(value.is_some())
+    }
+
+    /// Add edge between entities.
+    ///
+    /// # Arguments
+    ///
+    /// * `tenant_id` - Tenant identifier
+    /// * `src_id` - Source entity UUID
+    /// * `dst_id` - Destination entity UUID
+    /// * `rel_type` - Relationship type (e.g., "authored", "references")
+    /// * `properties` - Optional edge properties
+    ///
+    /// # Returns
+    ///
+    /// Created edge
+    ///
+    /// # Errors
+    ///
+    /// Returns error if entities don't exist
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// db.add_edge("tenant1", author_id, article_id, "authored", None)?;
+    /// db.add_edge("tenant1", article1_id, article2_id, "references",
+    ///     Some(json!({"weight": 0.8})))?;
+    /// ```
+    pub fn add_edge(
+        &self,
+        tenant_id: &str,
+        src_id: uuid::Uuid,
+        dst_id: uuid::Uuid,
+        rel_type: &str,
+        properties: Option<serde_json::Value>,
+    ) -> Result<Edge> {
+        use crate::types::{DatabaseError, Edge};
+
+        // Verify both entities exist
+        if !self.exists(tenant_id, src_id)? {
+            return Err(DatabaseError::EntityNotFound(src_id));
+        }
+        if !self.exists(tenant_id, dst_id)? {
+            return Err(DatabaseError::EntityNotFound(dst_id));
+        }
+
+        // Create edge
+        let mut edge = Edge::new(src_id, dst_id, rel_type.to_string());
+
+        // Add properties if provided
+        if let Some(props) = properties {
+            if let Some(obj) = props.as_object() {
+                for (key, value) in obj {
+                    edge.add_property(key.clone(), value.clone());
+                }
+            }
+        }
+
+        // Serialize edge
+        let edge_value = serde_json::to_vec(&edge)?;
+
+        // Store in forward CF (src → dst)
+        let forward_key = crate::storage::keys::encode_edge_key(src_id, dst_id, rel_type);
+        let cf_edges = self.storage.cf_handle(crate::storage::column_families::CF_EDGES);
+        self.storage.db().put_cf(&cf_edges, &forward_key, &edge_value)
+            .map_err(|e| DatabaseError::StorageError(e))?;
+
+        // Store in reverse CF (dst ← src)
+        let reverse_key = crate::storage::keys::encode_reverse_edge_key(dst_id, src_id, rel_type);
+        let cf_edges_reverse = self.storage.cf_handle(crate::storage::column_families::CF_EDGES_REVERSE);
+        self.storage.db().put_cf(&cf_edges_reverse, &reverse_key, &edge_value)
+            .map_err(|e| DatabaseError::StorageError(e))?;
+
+        Ok(edge)
+    }
+
+    /// Get outgoing edges from an entity.
+    ///
+    /// # Arguments
+    ///
+    /// * `src_id` - Source entity UUID
+    /// * `rel_type` - Optional relationship type filter
+    ///
+    /// # Returns
+    ///
+    /// Vector of outgoing edges
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// // Get all outgoing edges
+    /// let edges = db.get_edges(author_id, None)?;
+    ///
+    /// // Get only "authored" edges
+    /// let authored = db.get_edges(author_id, Some("authored"))?;
+    /// ```
+    pub fn get_edges(&self, src_id: uuid::Uuid, rel_type: Option<&str>) -> Result<Vec<Edge>> {
+        use rocksdb::IteratorMode;
+
+        // Prefix: src:{uuid}:
+        let prefix = format!("src:{}:", src_id).into_bytes();
+        let cf = self.storage.cf_handle(crate::storage::column_families::CF_EDGES);
+
+        let iter = self.storage.db().iterator_cf(
+            &cf,
+            IteratorMode::From(&prefix, rocksdb::Direction::Forward),
+        );
+
+        let mut edges = Vec::new();
+
+        for item in iter {
+            let (key, value) = item.map_err(|e| crate::types::DatabaseError::StorageError(e))?;
+
+            if !key.starts_with(&prefix) {
+                break;
+            }
+
+            // Deserialize edge
+            let edge: Edge = serde_json::from_slice(&value)?;
+
+            // Filter by rel_type if specified
+            if let Some(rel) = rel_type {
+                if edge.rel_type != rel {
+                    continue;
+                }
+            }
+
+            edges.push(edge);
+        }
+
+        Ok(edges)
+    }
+
+    /// Get incoming edges to an entity.
+    ///
+    /// # Arguments
+    ///
+    /// * `dst_id` - Destination entity UUID
+    /// * `rel_type` - Optional relationship type filter
+    ///
+    /// # Returns
+    ///
+    /// Vector of incoming edges
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// // Get all incoming edges
+    /// let edges = db.get_incoming_edges(article_id, None)?;
+    ///
+    /// // Get only "references" edges
+    /// let refs = db.get_incoming_edges(article_id, Some("references"))?;
+    /// ```
+    pub fn get_incoming_edges(&self, dst_id: uuid::Uuid, rel_type: Option<&str>) -> Result<Vec<Edge>> {
+        use rocksdb::IteratorMode;
+
+        // Prefix: dst:{uuid}:
+        let prefix = format!("dst:{}:", dst_id).into_bytes();
+        let cf = self.storage.cf_handle(crate::storage::column_families::CF_EDGES_REVERSE);
+
+        let iter = self.storage.db().iterator_cf(
+            &cf,
+            IteratorMode::From(&prefix, rocksdb::Direction::Forward),
+        );
+
+        let mut edges = Vec::new();
+
+        for item in iter {
+            let (key, value) = item.map_err(|e| crate::types::DatabaseError::StorageError(e))?;
+
+            if !key.starts_with(&prefix) {
+                break;
+            }
+
+            // Deserialize edge
+            let edge: Edge = serde_json::from_slice(&value)?;
+
+            // Filter by rel_type if specified
+            if let Some(rel) = rel_type {
+                if edge.rel_type != rel {
+                    continue;
+                }
+            }
+
+            edges.push(edge);
+        }
+
+        Ok(edges)
+    }
+
+    /// Delete edge between entities.
+    ///
+    /// # Arguments
+    ///
+    /// * `src_id` - Source entity UUID
+    /// * `dst_id` - Destination entity UUID
+    /// * `rel_type` - Relationship type
+    ///
+    /// # Returns
+    ///
+    /// Ok if edge was deleted or didn't exist
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// db.delete_edge(author_id, article_id, "authored")?;
+    /// ```
+    pub fn delete_edge(&self, src_id: uuid::Uuid, dst_id: uuid::Uuid, rel_type: &str) -> Result<()> {
+        use crate::types::DatabaseError;
+
+        // Delete from forward CF
+        let forward_key = crate::storage::keys::encode_edge_key(src_id, dst_id, rel_type);
+        let cf_edges = self.storage.cf_handle(crate::storage::column_families::CF_EDGES);
+        self.storage.db().delete_cf(&cf_edges, &forward_key)
+            .map_err(|e| DatabaseError::StorageError(e))?;
+
+        // Delete from reverse CF
+        let reverse_key = crate::storage::keys::encode_reverse_edge_key(dst_id, src_id, rel_type);
+        let cf_edges_reverse = self.storage.cf_handle(crate::storage::column_families::CF_EDGES_REVERSE);
+        self.storage.db().delete_cf(&cf_edges_reverse, &reverse_key)
+            .map_err(|e| DatabaseError::StorageError(e))?;
+
+        Ok(())
     }
 
     /// Get entity by key field value (reverse lookup).
@@ -1692,5 +1914,227 @@ mod tests {
 
         // Should still exist (soft deleted)
         assert!(db.exists("tenant1", id).unwrap());
+    }
+
+    #[test]
+    fn test_add_edge() {
+        let db = Database::open_temp().unwrap();
+
+        // Register schema
+        let schema = serde_json::json!({
+            "title": "Person",
+            "version": "1.0.0",
+            "short_name": "person",
+            "properties": {"name": {"type": "string"}},
+            "required": ["name"]
+        });
+
+        db.register_schema("person", schema).unwrap();
+
+        // Insert entities
+        let alice_id = db.insert("tenant1", "person", serde_json::json!({"name": "Alice"})).unwrap();
+        let bob_id = db.insert("tenant1", "person", serde_json::json!({"name": "Bob"})).unwrap();
+
+        // Add edge
+        let edge = db.add_edge("tenant1", alice_id, bob_id, "knows", None).unwrap();
+
+        assert_eq!(edge.src, alice_id);
+        assert_eq!(edge.dst, bob_id);
+        assert_eq!(edge.rel_type, "knows");
+    }
+
+    #[test]
+    fn test_add_edge_with_properties() {
+        let db = Database::open_temp().unwrap();
+
+        // Register schema
+        let schema = serde_json::json!({
+            "title": "Person",
+            "version": "1.0.0",
+            "short_name": "person",
+            "properties": {"name": {"type": "string"}},
+            "required": ["name"]
+        });
+
+        db.register_schema("person", schema).unwrap();
+
+        // Insert entities
+        let alice_id = db.insert("tenant1", "person", serde_json::json!({"name": "Alice"})).unwrap();
+        let bob_id = db.insert("tenant1", "person", serde_json::json!({"name": "Bob"})).unwrap();
+
+        // Add edge with properties
+        let props = serde_json::json!({"weight": 0.8, "since": "2020-01-01"});
+        let edge = db.add_edge("tenant1", alice_id, bob_id, "knows", Some(props)).unwrap();
+
+        assert_eq!(edge.data.properties.get("weight").unwrap(), &serde_json::json!(0.8));
+        assert_eq!(edge.data.properties.get("since").unwrap(), "2020-01-01");
+    }
+
+    #[test]
+    fn test_add_edge_nonexistent_entity() {
+        let db = Database::open_temp().unwrap();
+
+        // Register schema
+        let schema = serde_json::json!({
+            "title": "Person",
+            "version": "1.0.0",
+            "short_name": "person",
+            "properties": {"name": {"type": "string"}},
+            "required": ["name"]
+        });
+
+        db.register_schema("person", schema).unwrap();
+
+        // Insert one entity
+        let alice_id = db.insert("tenant1", "person", serde_json::json!({"name": "Alice"})).unwrap();
+
+        // Try to add edge to nonexistent entity
+        let result = db.add_edge("tenant1", alice_id, uuid::Uuid::new_v4(), "knows", None);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_get_edges() {
+        let db = Database::open_temp().unwrap();
+
+        // Register schema
+        let schema = serde_json::json!({
+            "title": "Person",
+            "version": "1.0.0",
+            "short_name": "person",
+            "properties": {"name": {"type": "string"}},
+            "required": ["name"]
+        });
+
+        db.register_schema("person", schema).unwrap();
+
+        // Insert entities
+        let alice_id = db.insert("tenant1", "person", serde_json::json!({"name": "Alice"})).unwrap();
+        let bob_id = db.insert("tenant1", "person", serde_json::json!({"name": "Bob"})).unwrap();
+        let charlie_id = db.insert("tenant1", "person", serde_json::json!({"name": "Charlie"})).unwrap();
+
+        // Add edges
+        db.add_edge("tenant1", alice_id, bob_id, "knows", None).unwrap();
+        db.add_edge("tenant1", alice_id, charlie_id, "knows", None).unwrap();
+        db.add_edge("tenant1", alice_id, bob_id, "likes", None).unwrap();
+
+        // Get all outgoing edges
+        let edges = db.get_edges(alice_id, None).unwrap();
+        assert_eq!(edges.len(), 3);
+
+        // Get only "knows" edges
+        let knows_edges = db.get_edges(alice_id, Some("knows")).unwrap();
+        assert_eq!(knows_edges.len(), 2);
+
+        // Get only "likes" edges
+        let likes_edges = db.get_edges(alice_id, Some("likes")).unwrap();
+        assert_eq!(likes_edges.len(), 1);
+    }
+
+    #[test]
+    fn test_get_incoming_edges() {
+        let db = Database::open_temp().unwrap();
+
+        // Register schema
+        let schema = serde_json::json!({
+            "title": "Person",
+            "version": "1.0.0",
+            "short_name": "person",
+            "properties": {"name": {"type": "string"}},
+            "required": ["name"]
+        });
+
+        db.register_schema("person", schema).unwrap();
+
+        // Insert entities
+        let alice_id = db.insert("tenant1", "person", serde_json::json!({"name": "Alice"})).unwrap();
+        let bob_id = db.insert("tenant1", "person", serde_json::json!({"name": "Bob"})).unwrap();
+        let charlie_id = db.insert("tenant1", "person", serde_json::json!({"name": "Charlie"})).unwrap();
+
+        // Add edges (multiple entities pointing to Bob)
+        db.add_edge("tenant1", alice_id, bob_id, "knows", None).unwrap();
+        db.add_edge("tenant1", charlie_id, bob_id, "knows", None).unwrap();
+
+        // Get incoming edges to Bob
+        let edges = db.get_incoming_edges(bob_id, None).unwrap();
+        assert_eq!(edges.len(), 2);
+
+        // Check sources
+        let sources: Vec<uuid::Uuid> = edges.iter().map(|e| e.src).collect();
+        assert!(sources.contains(&alice_id));
+        assert!(sources.contains(&charlie_id));
+    }
+
+    #[test]
+    fn test_delete_edge() {
+        let db = Database::open_temp().unwrap();
+
+        // Register schema
+        let schema = serde_json::json!({
+            "title": "Person",
+            "version": "1.0.0",
+            "short_name": "person",
+            "properties": {"name": {"type": "string"}},
+            "required": ["name"]
+        });
+
+        db.register_schema("person", schema).unwrap();
+
+        // Insert entities
+        let alice_id = db.insert("tenant1", "person", serde_json::json!({"name": "Alice"})).unwrap();
+        let bob_id = db.insert("tenant1", "person", serde_json::json!({"name": "Bob"})).unwrap();
+
+        // Add edge
+        db.add_edge("tenant1", alice_id, bob_id, "knows", None).unwrap();
+
+        // Verify edge exists
+        let edges = db.get_edges(alice_id, None).unwrap();
+        assert_eq!(edges.len(), 1);
+
+        // Delete edge
+        db.delete_edge(alice_id, bob_id, "knows").unwrap();
+
+        // Verify edge is gone
+        let edges = db.get_edges(alice_id, None).unwrap();
+        assert_eq!(edges.len(), 0);
+
+        // Also gone from reverse index
+        let incoming = db.get_incoming_edges(bob_id, None).unwrap();
+        assert_eq!(incoming.len(), 0);
+    }
+
+    #[test]
+    fn test_bidirectional_edges() {
+        let db = Database::open_temp().unwrap();
+
+        // Register schema
+        let schema = serde_json::json!({
+            "title": "Person",
+            "version": "1.0.0",
+            "short_name": "person",
+            "properties": {"name": {"type": "string"}},
+            "required": ["name"]
+        });
+
+        db.register_schema("person", schema).unwrap();
+
+        // Insert entities
+        let alice_id = db.insert("tenant1", "person", serde_json::json!({"name": "Alice"})).unwrap();
+        let bob_id = db.insert("tenant1", "person", serde_json::json!({"name": "Bob"})).unwrap();
+
+        // Add edge
+        db.add_edge("tenant1", alice_id, bob_id, "knows", None).unwrap();
+
+        // Query from both directions
+        let outgoing = db.get_edges(alice_id, None).unwrap();
+        let incoming = db.get_incoming_edges(bob_id, None).unwrap();
+
+        assert_eq!(outgoing.len(), 1);
+        assert_eq!(incoming.len(), 1);
+
+        // Both should have same data
+        assert_eq!(outgoing[0].src, incoming[0].src);
+        assert_eq!(outgoing[0].dst, incoming[0].dst);
+        assert_eq!(outgoing[0].rel_type, incoming[0].rel_type);
     }
 }

@@ -101,6 +101,48 @@ enum Commands {
         key: String,
     },
 
+    /// Add edge between entities
+    AddEdge {
+        /// Source entity UUID
+        src: String,
+
+        /// Destination entity UUID
+        dst: String,
+
+        /// Relationship type
+        rel_type: String,
+
+        /// Optional edge properties (JSON)
+        #[arg(long)]
+        properties: Option<String>,
+    },
+
+    /// Get edges from entity
+    GetEdges {
+        /// Entity UUID
+        uuid: String,
+
+        /// Relationship type filter
+        #[arg(long)]
+        rel_type: Option<String>,
+
+        /// Direction: out (default), in, both
+        #[arg(long, default_value = "out")]
+        direction: String,
+    },
+
+    /// Delete edge between entities
+    DeleteEdge {
+        /// Source entity UUID
+        src: String,
+
+        /// Destination entity UUID
+        dst: String,
+
+        /// Relationship type
+        rel_type: String,
+    },
+
     /// Ingest file (parse and chunk)
     Ingest {
         /// File path
@@ -290,6 +332,15 @@ fn main() -> anyhow::Result<()> {
         Commands::Lookup { key } => {
             cmd_lookup(&db_path, &key)?;
         }
+        Commands::AddEdge { src, dst, rel_type, properties } => {
+            cmd_add_edge(&db_path, &src, &dst, &rel_type, properties.as_deref())?;
+        }
+        Commands::GetEdges { uuid, rel_type, direction } => {
+            cmd_get_edges(&db_path, &uuid, rel_type.as_deref(), &direction)?;
+        }
+        Commands::DeleteEdge { src, dst, rel_type } => {
+            cmd_delete_edge(&db_path, &src, &dst, &rel_type)?;
+        }
         Commands::Ingest { file, schema } => {
             cmd_ingest(&db_path, &file, &schema)?;
         }
@@ -439,6 +490,121 @@ fn cmd_lookup(db_path: &PathBuf, key: &str) -> anyhow::Result<()> {
     if !found {
         println!("✗ No entity found with key: {}", key);
     }
+
+    Ok(())
+}
+
+fn cmd_add_edge(
+    db_path: &PathBuf,
+    src_str: &str,
+    dst_str: &str,
+    rel_type: &str,
+    properties_str: Option<&str>,
+) -> anyhow::Result<()> {
+    let db = Database::open(db_path)?;
+
+    // Parse UUIDs
+    let src_id = uuid::Uuid::parse_str(src_str)?;
+    let dst_id = uuid::Uuid::parse_str(dst_str)?;
+
+    // Parse optional properties
+    let properties = if let Some(props_str) = properties_str {
+        Some(serde_json::from_str(props_str)?)
+    } else {
+        None
+    };
+
+    // Add edge
+    let edge = db.add_edge("default", src_id, dst_id, rel_type, properties)?;
+
+    println!("✓ Edge created");
+    println!("  From: {}", edge.src);
+    println!("  To: {}", edge.dst);
+    println!("  Type: {}", edge.rel_type);
+    println!("  Created: {}", edge.data.created_at);
+
+    if !edge.data.properties.is_empty() {
+        println!("  Properties:");
+        let formatted = serde_json::to_string_pretty(&edge.data.properties)?;
+        for line in formatted.lines() {
+            println!("    {}", line);
+        }
+    }
+
+    Ok(())
+}
+
+fn cmd_get_edges(
+    db_path: &PathBuf,
+    uuid_str: &str,
+    rel_type: Option<&str>,
+    direction: &str,
+) -> anyhow::Result<()> {
+    let db = Database::open(db_path)?;
+
+    // Parse UUID
+    let id = uuid::Uuid::parse_str(uuid_str)?;
+
+    // Get edges based on direction
+    let edges = match direction {
+        "out" => db.get_edges(id, rel_type)?,
+        "in" => db.get_incoming_edges(id, rel_type)?,
+        "both" => {
+            let mut all_edges = db.get_edges(id, rel_type)?;
+            let incoming = db.get_incoming_edges(id, rel_type)?;
+            all_edges.extend(incoming);
+            all_edges
+        }
+        _ => anyhow::bail!("Invalid direction: {}. Use 'out', 'in', or 'both'", direction),
+    };
+
+    if edges.is_empty() {
+        println!("No edges found for entity {}", id);
+        return Ok(());
+    }
+
+    println!("Found {} edge(s)", edges.len());
+    println!();
+
+    for (i, edge) in edges.iter().enumerate() {
+        println!("Edge {}:", i + 1);
+        println!("  From: {}", edge.src);
+        println!("  To: {}", edge.dst);
+        println!("  Type: {}", edge.rel_type);
+        println!("  Created: {}", edge.data.created_at);
+
+        if !edge.data.properties.is_empty() {
+            println!("  Properties:");
+            let formatted = serde_json::to_string_pretty(&edge.data.properties)?;
+            for line in formatted.lines() {
+                println!("    {}", line);
+            }
+        }
+        println!();
+    }
+
+    Ok(())
+}
+
+fn cmd_delete_edge(
+    db_path: &PathBuf,
+    src_str: &str,
+    dst_str: &str,
+    rel_type: &str,
+) -> anyhow::Result<()> {
+    let db = Database::open(db_path)?;
+
+    // Parse UUIDs
+    let src_id = uuid::Uuid::parse_str(src_str)?;
+    let dst_id = uuid::Uuid::parse_str(dst_str)?;
+
+    // Delete edge
+    db.delete_edge(src_id, dst_id, rel_type)?;
+
+    println!("✓ Edge deleted");
+    println!("  From: {}", src_id);
+    println!("  To: {}", dst_id);
+    println!("  Type: {}", rel_type);
 
     Ok(())
 }
