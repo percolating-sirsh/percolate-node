@@ -171,6 +171,7 @@ jobs:
         run: pip install maturin
 
       - name: Publish to PyPI
+        if: ${{ secrets.PYPI_API_TOKEN != '' }}
         working-directory: ${{ env.PROJECT_DIR }}
         env:
           MATURIN_PYPI_TOKEN: ${{ secrets.PYPI_API_TOKEN }}
@@ -187,6 +188,14 @@ jobs:
 
           echo "✅ Published to PyPI"
           echo "🔗 https://pypi.org/project/percolate-rocks/${VERSION}/"
+
+      - name: Skip publish (no token)
+        if: ${{ secrets.PYPI_API_TOKEN == '' }}
+        run: |
+          echo "⚠️  Skipping PyPI publish - PYPI_API_TOKEN secret not configured"
+          echo "To enable publishing:"
+          echo "1. Get PyPI token from https://pypi.org/manage/account/token/"
+          echo "2. Add as GitHub secret: PYPI_API_TOKEN"
 
       - name: Create build summary
         run: |
