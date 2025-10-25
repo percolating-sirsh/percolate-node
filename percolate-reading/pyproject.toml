@@ -63,6 +63,9 @@ dependencies = [
     # Utilities
     "httpx>=0.28.1",
     "python-dotenv>=1.0.1",
+
+    # S3 storage
+    "boto3>=1.35.0",
 ]
 
 [project.optional-dependencies]

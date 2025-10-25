@@ -1,9 +1,13 @@
-"""Storage manager for parse artifacts."""
+"""Storage manager for parse artifacts.
+
+Supports both local filesystem and S3 storage via FS abstraction.
+"""
 
 from pathlib import Path
 from uuid import UUID
 
 from percolate_reading.models.parse import StorageStrategy
+from percolate_reading.storage.fs import fs
 from percolate_reading.storage.strategies import (
     DatedStorageStrategy,
     SystemStorageStrategy,
@@ -25,10 +29,16 @@ class StorageManager:
         """Initialize storage manager.
 
         Args:
-            base_dir: Base directory for all parsed files
+            base_dir: Base directory for all parsed files (can be s3:///path or local)
         """
-        self.base_dir = Path(base_dir)
-        self.base_dir.mkdir(parents=True, exist_ok=True)
+        self.base_dir_str = str(base_dir)
+
+        # Only create local directory if not using S3
+        if not self.base_dir_str.startswith("s3://"):
+            self.base_dir = Path(base_dir)
+            self.base_dir.mkdir(parents=True, exist_ok=True)
+        else:
+            self.base_dir = Path(base_dir.replace("s3:///", "").replace("s3://", ""))
 
         # Initialize strategies
         self.strategies = {
@@ -83,7 +93,7 @@ class StorageManager:
         strategy: StorageStrategy = StorageStrategy.DATED,
         tenant_id: str | None = None,
     ) -> Path:
-        """Write an artifact to storage.
+        """Write an artifact to storage (local or S3).
 
         Args:
             job_id: Job ID
@@ -106,14 +116,18 @@ class StorageManager:
         job_dir = self.ensure_job_dir(job_id, strategy, tenant_id)
         artifact_path = job_dir / artifact_name
 
-        # Ensure parent directory exists (for nested paths like tables/table_0.csv)
-        artifact_path.parent.mkdir(parents=True, exist_ok=True)
-
-        # Write content
-        if isinstance(content, str):
-            artifact_path.write_text(content, encoding="utf-8")
+        # Build full path (s3:// or local)
+        if self.base_dir_str.startswith("s3://"):
+            # S3 path - combine base_dir with relative path
+            full_path = f"{self.base_dir_str.rstrip('/')}/{artifact_path}"
         else:
-            artifact_path.write_bytes(content)
+            # Local path
+            full_path = str(artifact_path)
+            # Ensure parent directory exists for local files
+            artifact_path.parent.mkdir(parents=True, exist_ok=True)
+
+        # Write using FS abstraction
+        fs.write(full_path, content)
 
         return artifact_path
 

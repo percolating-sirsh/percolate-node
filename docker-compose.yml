@@ -36,9 +36,17 @@ services:
       PERCOLATE_READING_PORT: "8001"
       PERCOLATE_READING_WORKERS: "1"
 
-      # Storage
-      PERCOLATE_READING_STORAGE_PATH: "/app/.fs/parse-jobs"
+      # Storage - Use S3 (Minio)
+      PERCOLATE_READING_STORAGE_PATH: "s3:///parse-jobs"
       PERCOLATE_READING_DB_PATH: "/app/.fs/reader-db"
+
+      # S3/Minio
+      PERCOLATE_READING_S3_ENABLED: "true"
+      PERCOLATE_READING_S3_ENDPOINT: "http://minio:9000"
+      PERCOLATE_READING_S3_ACCESS_KEY: "minioadmin"
+      PERCOLATE_READING_S3_SECRET_KEY: "minioadmin"
+      PERCOLATE_READING_S3_BUCKET: "percolate-files"
+      PERCOLATE_READING_S3_REGION: "us-east-1"
 
       # Models
       PERCOLATE_READING_DEVICE: "cpu"
@@ -55,6 +63,9 @@ services:
       OPENAI_API_KEY: "${OPENAI_API_KEY:-}"
     volumes:
       - reading_storage:/app/.fs
+    depends_on:
+      minio:
+        condition: service_healthy
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
       interval: 10s
