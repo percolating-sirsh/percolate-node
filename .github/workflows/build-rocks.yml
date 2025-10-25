@@ -115,6 +115,10 @@ jobs:
 
       - name: Build wheel
         working-directory: ${{ env.PROJECT_DIR }}
+        env:
+          # Set minimum macOS version to 10.13 for Xcode 16.4 compatibility
+          # Required for aligned deallocation in modern C++ standard library
+          MACOSX_DEPLOYMENT_TARGET: "10.13"
         run: |
           echo "🔨 Building wheel for ${{ matrix.platform }}"
           maturin build --release --target ${{ matrix.target }}
