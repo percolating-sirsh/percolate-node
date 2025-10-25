@@ -7,7 +7,7 @@ All heavy operations are delegated to Rust for performance.
 # Expose Rust bindings directly for now
 from rem_db._rust import Database
 
-__version__ = "0.2.0"
+__version__ = "0.2.3"
 
 __all__ = [
     "Database",

@@ -10,14 +10,30 @@ from pathlib import Path
 from rich.console import Console
 from rich.table import Table
 import json
+import os
+import sys
 
 app = typer.Typer(help="REM Database CLI")
 console = Console()
 
 
+def get_db_path() -> Path:
+    """Get database path from environment or default."""
+    path_str = os.environ.get("P8_DB_PATH", "./data")
+    return Path(path_str).expanduser()
+
+
+def get_database():
+    """Get database instance with default tenant."""
+    from rem_db import Database
+    path = get_db_path()
+    tenant_id = os.environ.get("P8_TENANT_ID", "default")
+    return Database(str(path), tenant_id)
+
+
 @app.command()
 def init(
-    path: Annotated[Path, typer.Option("--path", help="Database directory path")] = Path("./data"),
+    path: Annotated[Optional[Path], typer.Option("--path", help="Database directory path")] = None,
 ):
     """Initialize database.
 
@@ -26,8 +42,20 @@ def init(
     Example:
         rem init --path ./data
     """
-    # TODO: Implement database initialization
-    console.print(f"[green]✓[/green] Initialized database at {path}")
+    try:
+        if path:
+            os.environ["P8_DB_PATH"] = str(path)
+
+        db_path = get_db_path()
+        db_path.mkdir(parents=True, exist_ok=True)
+
+        # Opening the database will initialize it
+        db = get_database()
+
+        console.print(f"[green]✓[/green] Initialized database at {db_path}")
+    except Exception as e:
+        console.print(f"[red]✗[/red] Failed to initialize database: {e}")
+        raise typer.Exit(1)
 
 
 @app.command("schema")
@@ -38,15 +66,37 @@ def schema_cmd():
 
 @app.command("schema-add")
 def schema_add(
-    schema_ref: Annotated[str, typer.Argument(help="Schema reference (file.py::ModelName)")],
+    schema_path: Annotated[Path, typer.Argument(help="Path to schema file (JSON/YAML)")],
 ):
-    """Register Pydantic schema.
+    """Register schema from JSON or YAML file.
 
     Example:
-        rem schema-add models.py::Article
+        rem schema-add article_schema.json
+        rem schema-add article_schema.yaml
     """
-    # TODO: Load Pydantic model and register schema
-    console.print(f"[green]✓[/green] Registered schema: {schema_ref}")
+    try:
+        if not schema_path.exists():
+            console.print(f"[red]✗[/red] Schema file not found: {schema_path}")
+            raise typer.Exit(1)
+
+        # Read schema file
+        with open(schema_path) as f:
+            if schema_path.suffix in [".yaml", ".yml"]:
+                import yaml
+                schema_data = yaml.safe_load(f)
+            else:
+                schema_data = json.load(f)
+
+        # Get schema name from file or data
+        schema_name = schema_data.get("name") or schema_data.get("short_name") or schema_path.stem
+
+        db = get_database()
+        db.register_schema(schema_name, json.dumps(schema_data))
+
+        console.print(f"[green]✓[/green] Registered schema: {schema_name}")
+    except Exception as e:
+        console.print(f"[red]✗[/red] Failed to register schema: {e}")
+        raise typer.Exit(1)
 
 
 @app.command("schema-list")
@@ -56,15 +106,23 @@ def schema_list():
     Example:
         rem schema-list
     """
-    # TODO: Get schemas from database
-    table = Table(title="Registered Schemas")
-    table.add_column("Name", style="cyan")
-    table.add_column("Version", style="green")
-    table.add_column("Embedding Fields", style="yellow")
-    table.add_column("Indexed Fields", style="blue")
+    try:
+        db = get_database()
+        schemas = db.list_schemas()
 
-    # TODO: Add rows from database
-    console.print(table)
+        if schemas:
+            table = Table(title="Registered Schemas")
+            table.add_column("Name", style="cyan")
+
+            for schema_name in schemas:
+                table.add_row(schema_name)
+
+            console.print(table)
+        else:
+            console.print("[yellow]No schemas registered[/yellow]")
+    except Exception as e:
+        console.print(f"[red]✗[/red] Failed to list schemas: {e}")
+        raise typer.Exit(1)
 
 
 @app.command()
@@ -79,13 +137,35 @@ def insert(
         rem insert articles '{"title": "...", "content": "..."}'
         cat data.jsonl | rem insert articles --batch
     """
-    # TODO: Parse JSON and insert
-    if batch:
-        # TODO: Read JSONL from stdin and batch insert
-        console.print("[green]✓[/green] Batch insert complete")
-    else:
-        # TODO: Single insert
-        console.print(f"[green]✓[/green] Inserted entity with ID: <uuid>")
+    try:
+        db = get_database()
+
+        if batch:
+            # Read JSONL from stdin
+            uuids = []
+            for line in sys.stdin:
+                line = line.strip()
+                if not line:
+                    continue
+                entity_data = json.loads(line)
+                uuid_str = db.insert(table, entity_data)
+                uuids.append(uuid_str)
+
+            console.print(f"[green]✓[/green] Batch insert complete: {len(uuids)} records inserted")
+            if uuids and len(uuids) <= 5:
+                for uuid_str in uuids:
+                    console.print(f"  - {uuid_str}")
+        else:
+            if not data:
+                console.print("[red]✗[/red] No data provided. Use --batch for stdin or provide JSON string.")
+                raise typer.Exit(1)
+
+            entity_data = json.loads(data)
+            uuid_str = db.insert(table, entity_data)
+            console.print(f"[green]✓[/green] Inserted entity with ID: {uuid_str}")
+    except Exception as e:
+        console.print(f"[red]✗[/red] Insert failed: {e}")
+        raise typer.Exit(1)
 
 
 @app.command()
@@ -96,10 +176,26 @@ def ingest(
     """Upload and chunk document file.
 
     Example:
-        rem ingest tutorial.pdf --schema=articles
+        rem ingest tutorial.txt --schema=articles
+        rem ingest document.txt --schema=resources
     """
-    # TODO: Parse document, chunk, and insert
-    console.print(f"[green]✓[/green] Ingested {file_path} as {schema}")
+    try:
+        if not file_path.exists():
+            console.print(f"[red]✗[/red] File not found: {file_path}")
+            raise typer.Exit(1)
+
+        db = get_database()
+        uuids = db.ingest(str(file_path), schema)
+
+        console.print(f"[green]✓[/green] Ingested {file_path}: {len(uuids)} chunks created")
+        if uuids and len(uuids) <= 5:
+            for uuid_str in uuids:
+                console.print(f"  - {uuid_str}")
+        elif uuids:
+            console.print(f"  - {uuids[0]} ... and {len(uuids) - 1} more")
+    except Exception as e:
+        console.print(f"[red]✗[/red] Ingest failed: {e}")
+        raise typer.Exit(1)
 
 
 @app.command()
@@ -111,21 +207,42 @@ def get(
     Example:
         rem get 550e8400-e29b-41d4-a716-446655440000
     """
-    # TODO: Get entity from database
-    console.print_json('{"id": "...", "properties": {...}}')
+    try:
+        db = get_database()
+        entity = db.get(entity_id)
+
+        if entity:
+            console.print_json(json.dumps(entity, indent=2))
+        else:
+            console.print(f"[yellow]No entity found with ID: {entity_id}[/yellow]")
+            raise typer.Exit(1)
+    except Exception as e:
+        console.print(f"[red]✗[/red] Get failed: {e}")
+        raise typer.Exit(1)
 
 
 @app.command()
 def lookup(
+    table: Annotated[str, typer.Argument(help="Table name")],
     key_value: Annotated[str, typer.Argument(help="Key field value")],
 ):
-    """Global key lookup.
+    """Lookup by key field value.
 
     Example:
-        rem lookup "Python Guide"
+        rem lookup articles "Python Guide"
     """
-    # TODO: Lookup entities by key
-    console.print_json('[{"id": "...", "properties": {...}}]')
+    try:
+        db = get_database()
+        entities = db.lookup(table, key_value)
+
+        if entities:
+            console.print_json(json.dumps(entities, indent=2))
+        else:
+            console.print(f"[yellow]No entities found with key: {key_value}[/yellow]")
+            raise typer.Exit(1)
+    except Exception as e:
+        console.print(f"[red]✗[/red] Lookup failed: {e}")
+        raise typer.Exit(1)
 
 
 @app.command()
@@ -139,8 +256,19 @@ def search(
     Example:
         rem search "async programming" --schema=articles --top-k=5
     """
-    # TODO: Perform vector search
-    console.print_json('[{"entity": {...}, "score": 0.95}]')
+    try:
+        db = get_database()
+        results = db.search(query, schema, top_k)
+
+        if results:
+            for entity, score in results:
+                console.print(f"\n[bold cyan]Score: {score:.4f}[/bold cyan]")
+                console.print_json(json.dumps(entity, indent=2))
+        else:
+            console.print("[yellow]No results found[/yellow]")
+    except Exception as e:
+        console.print(f"[red]✗[/red] Search failed: {e}")
+        raise typer.Exit(1)
 
 
 @app.command()
@@ -152,51 +280,55 @@ def query(
     Example:
         rem query "SELECT * FROM articles WHERE category = 'programming'"
     """
-    # TODO: Execute SQL query
-    console.print_json('[{"id": "...", "properties": {...}}]')
+    try:
+        db = get_database()
+        results = db.query(sql)
+
+        if results:
+            console.print_json(json.dumps(results, indent=2))
+        else:
+            console.print("[yellow]No results[/yellow]")
+    except Exception as e:
+        console.print(f"[red]✗[/red] Query failed: {e}")
+        raise typer.Exit(1)
 
 
 @app.command()
 def ask(
     question: Annotated[str, typer.Argument(help="Natural language question")],
     plan: Annotated[bool, typer.Option("--plan", help="Show query plan without executing")] = False,
-    max_stages: Annotated[int, typer.Option("--max-stages", help="Maximum retry stages")] = 2,
     schema: Annotated[Optional[str], typer.Option("--schema", help="Schema hint")] = None,
     model: Annotated[Optional[str], typer.Option("--model", help="LLM model override")] = None,
 ):
     """Natural language query using LLM.
 
+    Requires OPENAI_API_KEY or ANTHROPIC_API_KEY environment variable.
+
     Examples:
         rem ask "show recent programming articles"
         rem ask "show recent articles" --plan
-        rem ask "bob" --schema employees
-        rem ask "specific query" --max-stages 3
-        rem ask "query" --model gpt-3.5-turbo
+        rem ask "find articles about rust" --schema=articles
     """
-    # TODO: Generate and optionally execute query with multi-stage support
-    if plan:
-        console.print_json(
-            """{
-    "confidence": 0.95,
-    "query": "SELECT * FROM articles WHERE category = 'programming' ORDER BY created_at DESC LIMIT 10",
-    "reasoning": "User wants recent articles filtered by programming category",
-    "requires_search": false,
-    "next_steps": ["Broaden category if no results", "Try semantic search"]
-}"""
-        )
-    else:
-        # TODO: Execute with stages
-        console.print_json(
-            """{
-    "results": [{"id": "...", "properties": {...}}],
-    "query": "SELECT * FROM articles...",
-    "query_type": "sql",
-    "confidence": 0.95,
-    "stages": 1,
-    "stage_results": [5],
-    "total_time_ms": 250
-}"""
-        )
+    try:
+        # Set model if provided
+        if model:
+            os.environ["P8_DEFAULT_LLM"] = model
+
+        db = get_database()
+        result = db.ask(question, not plan, schema)
+
+        if plan:
+            # Show query plan
+            console.print("[bold]Query Plan:[/bold]")
+            console.print_json(json.dumps(result, indent=2))
+        else:
+            # Show results
+            console.print_json(json.dumps(result, indent=2))
+    except Exception as e:
+        console.print(f"[red]✗[/red] Ask failed: {e}")
+        if "API key" in str(e):
+            console.print("[yellow]Hint:[/yellow] Set OPENAI_API_KEY or ANTHROPIC_API_KEY environment variable")
+        raise typer.Exit(1)
 
 
 @app.command()
@@ -210,24 +342,47 @@ def traverse(
     Example:
         rem traverse 550e8400-... --depth=2 --direction=out
     """
-    # TODO: Perform graph traversal
-    console.print_json('["uuid1", "uuid2", "uuid3"]')
+    try:
+        db = get_database()
+        uuids = db.traverse(entity_id, direction, depth)
+
+        if uuids:
+            console.print(f"[green]Found {len(uuids)} entities:[/green]")
+            for uuid in uuids:
+                console.print(f"  - {uuid}")
+        else:
+            console.print("[yellow]No connected entities found[/yellow]")
+    except Exception as e:
+        console.print(f"[red]✗[/red] Traversal failed: {e}")
+        raise typer.Exit(1)
 
 
 @app.command()
 def export(
     table: Annotated[str, typer.Argument(help="Table name")],
     output: Annotated[Path, typer.Option("--output", help="Output file path")] = Path("./export.parquet"),
-    all_tables: Annotated[bool, typer.Option("--all", help="Export all tables")] = False,
+    format: Annotated[str, typer.Option("--format", help="Export format (parquet/csv/jsonl)")] = "parquet",
 ):
     """Export entities to Parquet/CSV/JSONL.
 
     Examples:
         rem export articles --output ./data.parquet
-        rem export --all --output ./exports/
+        rem export articles --output ./data.csv --format=csv
     """
-    # TODO: Export data
-    console.print(f"[green]✓[/green] Exported to {output}")
+    try:
+        # Infer format from file extension if not specified
+        if output.suffix:
+            ext_format = output.suffix[1:]  # Remove the dot
+            if ext_format in ["parquet", "csv", "jsonl"]:
+                format = ext_format
+
+        db = get_database()
+        db.export(table, str(output), format)
+
+        console.print(f"[green]✓[/green] Exported to {output}")
+    except Exception as e:
+        console.print(f"[red]✗[/red] Export failed: {e}")
+        raise typer.Exit(1)
 
 
 @app.command()
@@ -240,8 +395,9 @@ def serve(
     Example:
         rem serve --host 0.0.0.0 --port 50051
     """
-    # TODO: Start gRPC replication server
-    console.print(f"[green]✓[/green] Replication server listening on {host}:{port}")
+    console.print("[red]✗[/red] Not implemented - Rust bindings need to be completed")
+    console.print("[yellow]Help wanted:[/yellow] See src/replication module")
+    raise typer.Exit(1)
 
 
 @app.command()
@@ -254,8 +410,9 @@ def replicate(
     Examples:
         rem replicate --primary=localhost:50051 --follow
     """
-    # TODO: Connect to primary and sync
-    console.print(f"[green]✓[/green] Connected to primary {primary}")
+    console.print("[red]✗[/red] Not implemented - Rust bindings need to be completed")
+    console.print("[yellow]Help wanted:[/yellow] See src/replication module")
+    raise typer.Exit(1)
 
 
 @app.command("replication")
@@ -271,14 +428,9 @@ def replication_wal_status():
     Example:
         rem replication wal-status
     """
-    # TODO: Get WAL status
-    console.print_json(
-        """{
-    "sequence": 1,
-    "entries": 1,
-    "size_bytes": 512
-}"""
-    )
+    console.print("[red]✗[/red] Not implemented - Rust bindings need to be completed")
+    console.print("[yellow]Help wanted:[/yellow] See src/replication module")
+    raise typer.Exit(1)
 
 
 @app.command("replication-status")
@@ -288,16 +440,9 @@ def replication_status():
     Example:
         rem replication status
     """
-    # TODO: Get replication status
-    console.print_json(
-        """{
-    "mode": "replica",
-    "primary": "localhost:50051",
-    "wal_position": 1,
-    "lag_ms": 2,
-    "status": "synced"
-}"""
-    )
+    console.print("[red]✗[/red] Not implemented - Rust bindings need to be completed")
+    console.print("[yellow]Help wanted:[/yellow] See src/replication module")
+    raise typer.Exit(1)
 
 
 if __name__ == "__main__":
