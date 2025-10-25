@@ -52,7 +52,10 @@ impl ProviderFactory {
     ///
     /// # Arguments
     ///
-    /// * `config` - Provider config (e.g., "local:all-MiniLM-L6-v2", "openai:text-embedding-3-small")
+    /// * `config` - Provider config:
+    ///   - "local" or "local:all-MiniLM-L6-v2" - Default local model
+    ///   - "local:model-name" - Specific local model
+    ///   - "openai:text-embedding-3-small" - OpenAI model (requires API key in env)
     ///
     /// # Returns
     ///
@@ -61,7 +64,56 @@ impl ProviderFactory {
     /// # Errors
     ///
     /// Returns `DatabaseError::ConfigError` if config is invalid
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// // Default local model
+    /// let provider = ProviderFactory::create("local")?;
+    ///
+    /// // Specific local model
+    /// let provider = ProviderFactory::create("local:bge-small-en-v1.5")?;
+    ///
+    /// // OpenAI (requires P8_OPENAI_API_KEY env var)
+    /// let provider = ProviderFactory::create("openai:text-embedding-3-small")?;
+    /// ```
     pub fn create(config: &str) -> Result<Box<dyn EmbeddingProvider>> {
-        todo!("Implement ProviderFactory::create")
+        use crate::embeddings::local::LocalEmbedder;
+        use crate::embeddings::openai::OpenAIEmbedder;
+        use crate::types::DatabaseError;
+
+        let parts: Vec<&str> = config.split(':').collect();
+
+        match parts[0] {
+            "local" => {
+                let model = if parts.len() > 1 {
+                    parts[1]
+                } else {
+                    "all-MiniLM-L6-v2" // Default
+                };
+
+                let embedder = LocalEmbedder::new(model)?;
+                Ok(Box::new(embedder))
+            }
+            "openai" => {
+                if parts.len() < 2 {
+                    return Err(DatabaseError::ConfigError(
+                        "OpenAI config requires model name: 'openai:text-embedding-3-small'".to_string()
+                    ));
+                }
+
+                let api_key = std::env::var("P8_OPENAI_API_KEY")
+                    .map_err(|_| DatabaseError::ConfigError(
+                        "P8_OPENAI_API_KEY environment variable not set".to_string()
+                    ))?;
+
+                let model = parts[1].to_string();
+                let embedder = OpenAIEmbedder::new(api_key, model);
+                Ok(Box::new(embedder))
+            }
+            _ => Err(DatabaseError::ConfigError(
+                format!("Unknown provider: '{}'. Use 'local' or 'openai'", parts[0])
+            ))
+        }
     }
 }

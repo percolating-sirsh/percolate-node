@@ -1,0 +1,94 @@
+syntax = "proto3";
+
+package replication;
+
+// Replication service for WAL streaming.
+//
+// Primary node implements this service and exposes WAL entries
+// to replicas via bidirectional streaming.
+service ReplicationService {
+  // Subscribe to WAL updates.
+  //
+  // Replica sends initial position, primary streams all entries after that position.
+  // Bidirectional for heartbeats and acks.
+  rpc Subscribe(stream SubscribeRequest) returns (stream WalEntryProto);
+
+  // Get WAL status (current position, health).
+  rpc GetStatus(StatusRequest) returns (StatusResponse);
+}
+
+// Subscribe request from replica.
+message SubscribeRequest {
+  // Replica's current WAL position (sequence number).
+  // Primary will stream all entries > from_seq.
+  uint64 from_seq = 1;
+
+  // Replica node ID for tracking.
+  string replica_id = 2;
+
+  // Heartbeat (sent periodically to keep connection alive).
+  bool heartbeat = 3;
+
+  // Ack for received sequence (flow control).
+  uint64 ack_seq = 4;
+}
+
+// WAL entry for replication.
+message WalEntryProto {
+  // Sequence number (monotonic).
+  uint64 seq = 1;
+
+  // Operation type and data.
+  WalOperationProto op = 2;
+
+  // Timestamp (ISO 8601).
+  string timestamp = 3;
+}
+
+// WAL operation.
+message WalOperationProto {
+  oneof operation {
+    InsertOp insert = 1;
+    UpdateOp update = 2;
+    DeleteOp delete = 3;
+  }
+}
+
+// Insert operation.
+message InsertOp {
+  string tenant_id = 1;
+  bytes entity = 2;  // JSON-encoded entity
+}
+
+// Update operation.
+message UpdateOp {
+  string tenant_id = 1;
+  string entity_id = 2;
+  bytes changes = 3;  // JSON-encoded changes
+}
+
+// Delete operation.
+message DeleteOp {
+  string tenant_id = 1;
+  string entity_id = 2;
+}
+
+// Status request.
+message StatusRequest {
+  // Empty for now
+}
+
+// Status response.
+message StatusResponse {
+  // Current WAL sequence number.
+  uint64 current_seq = 1;
+
+  // Number of connected replicas.
+  uint32 replica_count = 2;
+
+  // WAL entry count.
+  uint64 entry_count = 3;
+
+  // Server healthy.
+  bool healthy = 4;
+}

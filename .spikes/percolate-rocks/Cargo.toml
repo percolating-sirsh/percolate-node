@@ -60,6 +60,7 @@ sqlparser = "0.51"
 # For Rust, we'll expose sentence-transformers via PyO3 or use OpenAI API
 # NO fastembed - not in reference implementation
 reqwest = { version = "0.12", features = ["json"] }  # For OpenAI API calls
+embed_anything = "0.6"  # Local embedding models (all-MiniLM-L6-v2, etc.)
 
 # Parquet export
 parquet = { version = "53", features = ["arrow"] }

@@ -144,6 +144,57 @@ impl Storage {
             .unwrap_or_else(|| panic!("Column family '{}' not found", name))
     }
 
+    /// Create an iterator that scans keys with a given prefix.
+    ///
+    /// # Arguments
+    ///
+    /// * `cf_name` - Column family name
+    /// * `prefix` - Key prefix to scan
+    ///
+    /// # Returns
+    ///
+    /// Iterator over (key, value) pairs
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// for item in storage.prefix_iterator(CF_WAL, b"wal:") {
+    ///     let (key, value) = item?;
+    ///     // Process entry
+    /// }
+    /// ```
+    pub fn prefix_iterator(&self, cf_name: &str, prefix: &[u8]) -> impl Iterator<Item = Result<(Box<[u8]>, Box<[u8]>)>> + '_ {
+        let cf = self.cf_handle(cf_name);
+        let iter = self.db.iterator_cf(&cf, rocksdb::IteratorMode::From(prefix, rocksdb::Direction::Forward));
+        let prefix = prefix.to_vec();
+
+        iter.map(move |item| {
+            item.map_err(|e| DatabaseError::StorageError(e.into()))
+        })
+        .take_while(move |item| {
+            match item {
+                Ok((key, _)) => key.starts_with(&prefix),
+                Err(_) => true, // Propagate errors
+            }
+        })
+    }
+
+    /// Create a reverse iterator over a column family.
+    ///
+    /// # Arguments
+    ///
+    /// * `cf_name` - Column family name
+    ///
+    /// # Returns
+    ///
+    /// Iterator over (key, value) pairs in reverse order
+    pub fn iterator_reverse(&self, cf_name: &str) -> impl Iterator<Item = Result<(Box<[u8]>, Box<[u8]>)>> + '_ {
+        let cf = self.cf_handle(cf_name);
+        self.db
+            .iterator_cf(&cf, rocksdb::IteratorMode::End)
+            .map(|item| item.map_err(|e| DatabaseError::StorageError(e.into())))
+    }
+
     /// Get underlying RocksDB instance.
     ///
     /// # Returns
