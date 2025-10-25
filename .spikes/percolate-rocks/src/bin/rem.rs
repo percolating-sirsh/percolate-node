@@ -52,6 +52,49 @@ enum Commands {
         uuid: String,
     },
 
+    /// Update entity
+    Update {
+        /// Entity UUID
+        uuid: String,
+
+        /// JSON updates (partial or full)
+        updates: String,
+    },
+
+    /// Delete entity
+    Delete {
+        /// Entity UUID
+        uuid: String,
+
+        /// Hard delete (permanent removal)
+        #[arg(long)]
+        hard: bool,
+    },
+
+    /// List entities in table
+    List {
+        /// Table/schema name
+        table: String,
+
+        /// Include soft-deleted entities
+        #[arg(long)]
+        include_deleted: bool,
+
+        /// Maximum number of results
+        #[arg(long)]
+        limit: Option<usize>,
+    },
+
+    /// Count entities in table
+    Count {
+        /// Table/schema name
+        table: String,
+
+        /// Include soft-deleted entities
+        #[arg(long)]
+        include_deleted: bool,
+    },
+
     /// Global key lookup
     Lookup {
         /// Key value to lookup
@@ -232,6 +275,18 @@ fn main() -> anyhow::Result<()> {
         Commands::Get { uuid } => {
             cmd_get(&db_path, &uuid)?;
         }
+        Commands::Update { uuid, updates } => {
+            cmd_update(&db_path, &uuid, &updates)?;
+        }
+        Commands::Delete { uuid, hard } => {
+            cmd_delete(&db_path, &uuid, hard)?;
+        }
+        Commands::List { table, include_deleted, limit } => {
+            cmd_list(&db_path, &table, include_deleted, limit)?;
+        }
+        Commands::Count { table, include_deleted } => {
+            cmd_count(&db_path, &table, include_deleted)?;
+        }
         Commands::Lookup { key } => {
             cmd_lookup(&db_path, &key)?;
         }
@@ -384,6 +439,97 @@ fn cmd_lookup(db_path: &PathBuf, key: &str) -> anyhow::Result<()> {
     if !found {
         println!("✗ No entity found with key: {}", key);
     }
+
+    Ok(())
+}
+
+fn cmd_update(db_path: &PathBuf, uuid_str: &str, updates_str: &str) -> anyhow::Result<()> {
+    let db = Database::open(db_path)?;
+
+    // Parse UUID
+    let id = uuid::Uuid::parse_str(uuid_str)?;
+
+    // Parse updates JSON
+    let updates: serde_json::Value = serde_json::from_str(updates_str)?;
+
+    // Update entity
+    let entity = db.update("default", id, updates)?;
+
+    println!("✓ Entity updated");
+    println!("  ID: {}", entity.system.id);
+    println!("  Type: {}", entity.system.entity_type);
+    println!("  Modified: {}", entity.system.modified_at);
+    println!("  Properties:");
+    let formatted = serde_json::to_string_pretty(&entity.properties)?;
+    for line in formatted.lines() {
+        println!("    {}", line);
+    }
+
+    Ok(())
+}
+
+fn cmd_delete(db_path: &PathBuf, uuid_str: &str, hard: bool) -> anyhow::Result<()> {
+    let db = Database::open(db_path)?;
+
+    // Parse UUID
+    let id = uuid::Uuid::parse_str(uuid_str)?;
+
+    if hard {
+        // Hard delete (permanent)
+        db.hard_delete("default", id)?;
+        println!("✓ Entity permanently deleted");
+        println!("  ID: {}", id);
+    } else {
+        // Soft delete
+        let entity = db.delete("default", id)?;
+        println!("✓ Entity soft deleted");
+        println!("  ID: {}", entity.system.id);
+        println!("  Type: {}", entity.system.entity_type);
+        println!("  Deleted at: {}", entity.system.deleted_at.unwrap_or_default());
+    }
+
+    Ok(())
+}
+
+fn cmd_list(
+    db_path: &PathBuf,
+    table: &str,
+    include_deleted: bool,
+    limit: Option<usize>,
+) -> anyhow::Result<()> {
+    let db = Database::open(db_path)?;
+
+    // List entities
+    let entities = db.list("default", table, include_deleted, limit)?;
+
+    println!("Entities in '{}' (found: {})", table, entities.len());
+    println!();
+
+    for entity in entities {
+        let deleted_marker = if entity.is_deleted() { " [DELETED]" } else { "" };
+        println!("• ID: {}{}", entity.system.id, deleted_marker);
+        println!("  Created: {}", entity.system.created_at);
+        println!("  Modified: {}", entity.system.modified_at);
+
+        let formatted = serde_json::to_string_pretty(&entity.properties)?;
+        for line in formatted.lines() {
+            println!("  {}", line);
+        }
+        println!();
+    }
+
+    Ok(())
+}
+
+fn cmd_count(db_path: &PathBuf, table: &str, include_deleted: bool) -> anyhow::Result<()> {
+    let db = Database::open(db_path)?;
+
+    // Count entities
+    let count = db.count("default", table, include_deleted)?;
+
+    let deleted_note = if include_deleted { " (including deleted)" } else { "" };
+    println!("Count: {}{}", count, deleted_note);
+    println!("Table: {}", table);
 
     Ok(())
 }
