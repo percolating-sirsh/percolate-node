@@ -833,10 +833,12 @@ fn cmd_search(
     Ok(())
 }
 
-fn cmd_query(_db_path: &PathBuf, sql: &str) -> anyhow::Result<()> {
-    println!("SQL query not yet implemented");
-    println!("  SQL: {}", sql);
-    println!("\nRequires: SQL parser, query executor");
+fn cmd_query(db_path: &PathBuf, sql: &str) -> anyhow::Result<()> {
+    let db = Database::open(db_path)?;
+    let results = db.query_sql("default", sql)?;
+
+    // Format and display results
+    println!("{}", serde_json::to_string_pretty(&results)?);
     Ok(())
 }
 
