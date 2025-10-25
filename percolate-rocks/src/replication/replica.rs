@@ -174,13 +174,17 @@ impl ReplicaNode {
             match op {
                 WalOperation::Insert { tenant_id, entity } => {
                     // Extract table name from entity
-                    if let Some(entity_type) = entity.get("entity_type").and_then(|v| v.as_str()) {
-                        self.database.insert(&tenant_id, entity_type, entity)?;
-                    } else {
-                        return Err(DatabaseError::ReplicationError(
-                            "Missing entity_type in Insert operation".to_string()
-                        ));
-                    }
+                    let entity_type = entity
+                        .get("entity_type")
+                        .and_then(|v| v.as_str())
+                        .ok_or_else(|| {
+                            DatabaseError::ReplicationError(
+                                "Missing entity_type in Insert operation".to_string()
+                            )
+                        })?
+                        .to_string();
+
+                    self.database.insert(&tenant_id, &entity_type, entity)?;
                 }
                 WalOperation::Update { tenant_id, entity_id, changes } => {
                     // Parse UUID from string

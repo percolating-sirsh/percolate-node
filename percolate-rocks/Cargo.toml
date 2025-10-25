@@ -70,8 +70,8 @@ embed_anything = "0.6"  # Local embedding models (all-MiniLM-L6-v2, etc.)
 
 # Export formats
 csv = "1"  # CSV export
-parquet = { version = "53", features = ["arrow"] }
-arrow = "53"
+parquet = { version = "54.2", features = ["arrow"] }
+arrow = "54.2"
 
 # Replication (gRPC)
 tonic = "0.12"
