@@ -185,7 +185,7 @@ percolation/
 - OpenTelemetry for observability
 - Flexible integration with external services
 
-**Rust Layer (percolate-core/):**
+**Rust Layer (percolate-rocks/):**
 - RocksDB for embedded database
 - HNSW for vector indexing
 - Fast document parsing
@@ -272,7 +272,7 @@ percolate/tests/
 
 **Rust Tests (cargo test):**
 ```
-percolate-core/
+percolate-rocks/
 ├── src/
 │   └── memory/
 │       ├── mod.rs
