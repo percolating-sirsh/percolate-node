@@ -111,12 +111,7 @@ jobs:
           MACOSX_DEPLOYMENT_TARGET: "10.13"
         run: |
           echo "🔨 Building wheel for ${{ matrix.platform }}"
-          if [[ "${{ matrix.platform }}" == "linux-amd64" ]]; then
-            # Specify manylinux version to avoid building multiple variants
-            maturin build --release --target ${{ matrix.target }} --manylinux 2_34
-          else
-            maturin build --release --target ${{ matrix.target }}
-          fi
+          maturin build --release --target ${{ matrix.target }}
           ls -lh target/wheels/
 
       - name: Test wheel (native only)
@@ -161,8 +156,13 @@ jobs:
 
       - name: Test wheel
         run: |
-          WHEEL=$(find wheels/wheel-linux-amd64/ -name "*.whl" | head -1)
+          # Find and test only the first wheel (avoids conflicts if multiple manylinux versions exist)
+          WHEEL=$(find wheels/wheel-linux-amd64/ -name "*.whl" | sort | head -1)
           echo "🧪 Testing wheel: ${WHEEL}"
+          if [ -z "${WHEEL}" ]; then
+            echo "❌ No Linux wheel found"
+            exit 1
+          fi
           pip install "${WHEEL}"
           python3 -c "import rem_db; print('✓ Package import works')"
           python3 -c "from rem_db import Database; print('✓ Database class accessible')"
