@@ -50,9 +50,11 @@ def create_pydantic_tool(mcp_tool_func: Callable) -> Tool:
     # Build JSON schema for parameters (excluding 'ctx')
     properties = {}
     required = []
+    has_ctx = False
 
     for name, param in sig.parameters.items():
         if name == "ctx":
+            has_ctx = True
             continue
 
         # Get type annotation
@@ -77,10 +79,14 @@ def create_pydantic_tool(mcp_tool_func: Callable) -> Tool:
         "required": required,
     }
 
-    # Create wrapper function that calls MCP tool with ctx=None
+    # Create wrapper function that calls MCP tool
+    # Only pass ctx=None if the original function has a ctx parameter
     async def wrapper(**kwargs: Any) -> Any:
-        """Wrapper that calls MCP tool with ctx=None."""
-        return await mcp_tool_func(ctx=None, **kwargs)
+        """Wrapper that calls MCP tool."""
+        if has_ctx:
+            return await mcp_tool_func(ctx=None, **kwargs)
+        else:
+            return await mcp_tool_func(**kwargs)
 
     # Create Tool using from_schema
     return Tool.from_schema(

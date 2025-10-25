@@ -1,0 +1,118 @@
+version: '3.8'
+
+services:
+  # Minio (S3-compatible storage for file uploads)
+  minio:
+    image: minio/minio:latest
+    container_name: percolate-minio
+    command: server /data --console-address ":9001"
+    ports:
+      - "9000:9000"  # API
+      - "9001:9001"  # Console
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    networks:
+      - percolate-network
+
+  # Percolate-Reading API (Document parsing service)
+  percolate-reading:
+    build:
+      context: ./percolate-reading
+      dockerfile: Dockerfile
+    container_name: percolate-reading
+    ports:
+      - "8001:8001"
+    environment:
+      # API Server
+      PERCOLATE_READING_HOST: "0.0.0.0"
+      PERCOLATE_READING_PORT: "8001"
+      PERCOLATE_READING_WORKERS: "1"
+
+      # Storage
+      PERCOLATE_READING_STORAGE_PATH: "/app/.fs/parse-jobs"
+      PERCOLATE_READING_DB_PATH: "/app/.fs/reader-db"
+
+      # Models
+      PERCOLATE_READING_DEVICE: "cpu"
+      PERCOLATE_READING_MODEL_CACHE_DIR: "/app/.fs/model-cache"
+      PERCOLATE_READING_WHISPER_MODEL: "base"
+      PERCOLATE_READING_EMBEDDING_MODEL: "nomic-embed-text-v1.5"
+
+      # Auth (optional)
+      PERCOLATE_READING_AUTH_ENABLED: "${PERCOLATE_READING_AUTH_ENABLED:-false}"
+      PERCOLATE_READING_API_TOKEN: "${PERCOLATE_READING_API_TOKEN:-}"
+
+      # LLM Keys (from host environment or .env)
+      ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY:-}"
+      OPENAI_API_KEY: "${OPENAI_API_KEY:-}"
+    volumes:
+      - reading_storage:/app/.fs
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    networks:
+      - percolate-network
+
+  # Percolate API (Main orchestration service with MCP)
+  percolate:
+    build:
+      context: ./percolate
+      dockerfile: Dockerfile
+    container_name: percolate-api
+    ports:
+      - "8000:8000"
+    environment:
+      # API Server
+      PERCOLATE_HOST: "0.0.0.0"
+      PERCOLATE_PORT: "8000"
+
+      # Storage
+      PERCOLATE_STORAGE_PATH: "/app/.fs"
+      PERCOLATE_AGENTS_PATH: "/app/.fs/agents"
+      PERCOLATE_MEMORY_PATH: "/app/.fs/memory"
+
+      # Percolate-Reading integration
+      PERCOLATE_PERCOLATE_READING_URL: "http://percolate-reading:8001"
+      PERCOLATE_PERCOLATE_READING_API_TOKEN: "${PERCOLATE_READING_API_TOKEN:-}"
+
+      # Auth
+      AUTH__ENABLED: "${AUTH__ENABLED:-false}"
+      AUTH__PROVIDER: "${AUTH__PROVIDER:-dev}"
+
+      # LLM Keys
+      ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY:-}"
+      OPENAI_API_KEY: "${OPENAI_API_KEY:-}"
+
+      # Default model
+      PERCOLATE_DEFAULT_MODEL: "${PERCOLATE_DEFAULT_MODEL:-claude-sonnet-4-20250514}"
+    volumes:
+      - percolate_storage:/app/.fs
+    depends_on:
+      percolate-reading:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+    networks:
+      - percolate-network
+
+volumes:
+  minio_data:
+  reading_storage:
+  percolate_storage:
+
+networks:
+  percolate-network:
+    driver: bridge

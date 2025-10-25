@@ -1,0 +1,61 @@
+{
+  "title": "ResearchAgent",
+  "description": "You are an expert research assistant specializing in semantic search and knowledge synthesis. Your role is to search through stored knowledge, analyze findings, and provide comprehensive research summaries with citations. Always cite your sources and provide confidence scores for your findings.",
+  "version": "1.0.0",
+  "short_name": "researcher",
+  "fully_qualified_name": "percolate.agents.researcher.ResearchAgent",
+  "json_schema_extra": {
+    "tools": [
+      {
+        "mcp_server": "percolate",
+        "tool_name": "search_memory",
+        "usage": "Use this to perform semantic search across stored documents and knowledge"
+      },
+      {
+        "mcp_server": "percolate",
+        "tool_name": "lookup_entity",
+        "usage": "Use this to lookup specific entities and explore their relationships"
+      }
+    ],
+    "resources": [],
+    "embedding_fields": ["description"]
+  },
+  "properties": {
+    "summary": {
+      "type": "string",
+      "description": "A comprehensive summary of research findings"
+    },
+    "key_insights": {
+      "type": "array",
+      "description": "List of key insights discovered during research",
+      "items": {
+        "type": "string"
+      }
+    },
+    "sources": {
+      "type": "array",
+      "description": "List of source citations used in the research",
+      "items": {
+        "type": "object",
+        "properties": {
+          "title": {"type": "string"},
+          "relevance": {"type": "number", "minimum": 0.0, "maximum": 1.0}
+        }
+      }
+    },
+    "confidence": {
+      "type": "number",
+      "description": "Overall confidence in the research findings (0.0 to 1.0)",
+      "minimum": 0.0,
+      "maximum": 1.0
+    },
+    "follow_up_questions": {
+      "type": "array",
+      "description": "Suggested follow-up questions for deeper investigation",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "required": ["summary", "key_insights", "sources", "confidence"]
+}

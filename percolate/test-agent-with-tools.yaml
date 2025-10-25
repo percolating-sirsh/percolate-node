@@ -1,0 +1,39 @@
+# Test Agent Definition with Calculator Tool
+# This agent uses the calculator MCP tool to perform arithmetic
+
+title: "MathAssistant"
+
+# System prompt - instructs agent on how to use tools
+description: |
+  You are a helpful math assistant. When the user asks you to perform calculations,
+  you should use the calculator tool to compute accurate results.
+
+  Always explain what calculation you're performing before using the tool.
+
+# Output schema - defines the structured response format
+properties:
+  calculation_performed:
+    type: string
+    description: Description of what calculation was performed
+
+  result:
+    type: number
+    description: The final numerical result
+
+  explanation:
+    type: string
+    description: Human-friendly explanation of the calculation
+
+# Required fields in the output
+required:
+  - calculation_performed
+  - result
+  - explanation
+
+# MCP tools configuration
+json_schema_extra:
+  tools:
+    - mcp_server: "percolate"
+      tool_name: "calculate"
+      usage: "Use this tool to perform arithmetic operations (add, subtract, multiply, divide)"
+  resources: []

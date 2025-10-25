@@ -1,0 +1,36 @@
+{
+  "title": "TestAgent",
+  "description": "You are a test agent for validating the agent-let framework. Your task is to analyze the user's question and provide a thoughtful response with reasoning, confidence score, and relevant tags. Always be concise but thorough in your analysis.",
+  "version": "1.0.0",
+  "short_name": "test_agent",
+  "fully_qualified_name": "percolate.agents.test_agent.TestAgent",
+  "json_schema_extra": {
+    "tools": [],
+    "resources": [],
+    "embedding_fields": ["description"]
+  },
+  "properties": {
+    "answer": {
+      "type": "string",
+      "description": "The main answer to the user's question"
+    },
+    "reasoning": {
+      "type": "string",
+      "description": "Step-by-step reasoning that led to the answer"
+    },
+    "confidence": {
+      "type": "number",
+      "description": "Confidence score from 0.0 to 1.0",
+      "minimum": 0.0,
+      "maximum": 1.0
+    },
+    "tags": {
+      "type": "array",
+      "description": "Relevant tags or categories for this interaction",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "required": ["answer", "reasoning", "confidence", "tags"]
+}

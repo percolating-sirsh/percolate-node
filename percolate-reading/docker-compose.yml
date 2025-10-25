@@ -1,0 +1,125 @@
+version: '3.8'
+
+services:
+  # Minio (S3-compatible storage)
+  minio:
+    image: minio/minio:latest
+    container_name: percolate-minio
+    command: server /data --console-address ":9001"
+    ports:
+      - "9000:9000"  # API
+      - "9001:9001"  # Console
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  # Percolate-Reading Gateway
+  gateway:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: percolate-gateway
+    ports:
+      - "8001:8001"
+    environment:
+      # API Server
+      PERCOLATE_READING_HOST: "0.0.0.0"
+      PERCOLATE_READING_PORT: "8001"
+      PERCOLATE_READING_WORKERS: "1"
+
+      # Storage
+      PERCOLATE_READING_STORAGE_PATH: "/app/.fs/parse-jobs"
+      PERCOLATE_READING_DB_PATH: "/app/.fs/reader-db"
+
+      # Gateway mode
+      PERCOLATE_READING_GATEWAY_MODE: "true"
+
+      # S3/Minio
+      PERCOLATE_READING_S3_ENABLED: "true"
+      PERCOLATE_READING_S3_ENDPOINT: "http://minio:9000"
+      PERCOLATE_READING_S3_ACCESS_KEY: "minioadmin"
+      PERCOLATE_READING_S3_SECRET_KEY: "minioadmin"
+      PERCOLATE_READING_S3_BUCKET: "percolate-files"
+
+      # NATS (connect to k8s cluster via port-forward)
+      # kubectl port-forward -n percolate svc/nats 4222:4222
+      PERCOLATE_READING_NATS_ENABLED: "true"
+      PERCOLATE_READING_NATS_URL: "nats://host.docker.internal:4222"
+      PERCOLATE_READING_NATS_QUEUE_SUBJECT: "percolate.jobs"
+
+      # LLM Keys (from host environment or .env)
+      ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY}"
+      OPENAI_API_KEY: "${OPENAI_API_KEY}"
+
+      # Models
+      PERCOLATE_READING_DEVICE: "cpu"
+      PERCOLATE_READING_MODEL_CACHE_DIR: "/app/.fs/model-cache"
+    volumes:
+      - gateway_storage:/app/.fs
+    depends_on:
+      minio:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    # Enable access to host for NATS port-forward
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  # Percolate-Reading Worker (for testing with k8s NATS)
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: percolate-worker
+    command: [".venv/bin/python", "-m", "percolate_reading.cli.main", "worker"]
+    environment:
+      # Worker mode
+      PERCOLATE_READING_GATEWAY_MODE: "false"
+      PERCOLATE_READING_WORKER_MODE: "true"
+
+      # Storage
+      PERCOLATE_READING_STORAGE_PATH: "/app/.fs/parse-jobs"
+      PERCOLATE_READING_DB_PATH: "/app/.fs/reader-db"
+
+      # S3/Minio
+      PERCOLATE_READING_S3_ENABLED: "true"
+      PERCOLATE_READING_S3_ENDPOINT: "http://minio:9000"
+      PERCOLATE_READING_S3_ACCESS_KEY: "minioadmin"
+      PERCOLATE_READING_S3_SECRET_KEY: "minioadmin"
+      PERCOLATE_READING_S3_BUCKET: "percolate-files"
+
+      # NATS (connect to k8s cluster via port-forward)
+      PERCOLATE_READING_NATS_ENABLED: "true"
+      PERCOLATE_READING_NATS_URL: "nats://host.docker.internal:4222"
+      PERCOLATE_READING_NATS_QUEUE_GROUP: "parse-workers"
+
+      # LLM Keys
+      ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY}"
+      OPENAI_API_KEY: "${OPENAI_API_KEY}"
+
+      # Models
+      PERCOLATE_READING_DEVICE: "cpu"
+      PERCOLATE_READING_MODEL_CACHE_DIR: "/app/.fs/model-cache"
+    volumes:
+      - worker_storage:/app/.fs
+    depends_on:
+      minio:
+        condition: service_healthy
+    # Enable access to host for NATS port-forward
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+volumes:
+  minio_data:
+  gateway_storage:
+  worker_storage:

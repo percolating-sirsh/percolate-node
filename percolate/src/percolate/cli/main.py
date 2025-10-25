@@ -2,8 +2,13 @@
 
 import asyncio
 import json
+from pathlib import Path
+
 import typer
+import yaml
 from rich.console import Console
+from rich.json import JSON
+from rich.panel import Panel
 from rich.table import Table
 
 app = typer.Typer(name="percolate", help="Personal AI node CLI")
@@ -122,6 +127,113 @@ def agent_eval(
         # Show usage
         usage = result["usage"]
         console.print(f"[dim]Tokens: {usage['input_tokens']} in / {usage['output_tokens']} out[/dim]")
+
+
+@app.command()
+def agent_run(
+    yaml_file: Path = typer.Argument(..., help="Path to YAML agent definition"),
+    prompt: str = typer.Argument(..., help="Prompt to evaluate agent with"),
+    tenant_id: str = typer.Option("default", help="Tenant ID"),
+    model: str = typer.Option(None, help="Model override"),
+    verbose: bool = typer.Option(False, "--verbose", "-v", help="Show detailed execution info"),
+) -> None:
+    """Run an agent from a YAML definition file.
+
+    The YAML file should contain:
+    - description: System prompt for the agent
+    - properties: Output schema definition
+    - required: List of required output fields
+    - tools: Optional list of MCP tools (for future)
+
+    Examples:
+        percolate agent-run test-agent.yaml "What is 2+2?"
+        percolate agent-run my-agent.yaml "Analyze this" --verbose
+        percolate agent-run agent.yaml "Question" --model claude-opus-4
+    """
+    from percolate.agents import AgentContext, create_agent
+
+    # Load YAML file
+    if not yaml_file.exists():
+        console.print(f"[red]Error:[/red] File not found: {yaml_file}")
+        raise typer.Exit(code=1)
+
+    with open(yaml_file) as f:
+        agent_schema = yaml.safe_load(f)
+
+    if verbose:
+        console.print(Panel("[bold]Agent Schema[/bold]", style="blue"))
+        console.print(JSON(json.dumps(agent_schema, indent=2)))
+        console.print()
+
+    async def run():
+        # Create context
+        ctx = AgentContext(
+            tenant_id=tenant_id,
+            default_model=model or "claude-sonnet-4-20250514",
+        )
+
+        if verbose:
+            console.print(f"[dim]Creating agent with model: {ctx.default_model}[/dim]")
+            console.print(f"[dim]Tenant: {ctx.tenant_id}[/dim]")
+            console.print()
+
+        # Create agent from schema
+        agent = await create_agent(
+            context=ctx,
+            agent_schema_override=agent_schema,
+            model_override=model,
+        )
+
+        if verbose:
+            console.print(f"[green]✓[/green] Agent created")
+            console.print(f"[dim]System prompt: {agent.system_prompt[:100]}...[/dim]")
+            console.print()
+
+        # Execute agent
+        console.print(f"[bold cyan]→[/bold cyan] Prompt: {prompt}")
+        console.print()
+
+        result = await agent.run(prompt)
+
+        return result
+
+    # Run async function
+    result = asyncio.run(run())
+
+    # Display structured output
+    if hasattr(result, 'output') and hasattr(result.output, 'model_dump'):
+        console.print(Panel("[bold]Structured Output[/bold]", style="green"))
+
+        # Pretty-print structured output
+        table = Table(show_header=False, box=None, padding=(0, 2))
+        table.add_column("Field", style="cyan bold")
+        table.add_column("Value")
+
+        data_dict = result.output.model_dump()
+        for key, value in data_dict.items():
+            if isinstance(value, list):
+                value_str = "\n".join(f"• {v}" for v in value)
+            elif isinstance(value, dict):
+                value_str = json.dumps(value, indent=2)
+            else:
+                value_str = str(value)
+            table.add_row(key, value_str)
+
+        console.print(table)
+        console.print()
+    else:
+        console.print(Panel(str(result), title="[bold]Response[/bold]", style="green"))
+        console.print()
+
+    # Show usage metrics
+    if hasattr(result, 'usage'):
+        usage = result.usage()
+        input_tokens = usage.input_tokens if hasattr(usage, 'input_tokens') else 0
+        output_tokens = usage.output_tokens if hasattr(usage, 'output_tokens') else 0
+        console.print(f"[dim]Tokens: {input_tokens} in / {output_tokens} out[/dim]")
+
+        if verbose and hasattr(usage, 'requests'):
+            console.print(f"[dim]Requests: {usage.requests}[/dim]")
 
 
 if __name__ == "__main__":

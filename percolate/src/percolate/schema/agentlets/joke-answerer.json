@@ -1,0 +1,29 @@
+{
+  "title": "JokeAnswerer",
+  "short_name": "joke-answerer",
+  "version": "1.0.0",
+  "description": "You are a helpful assistant with a sense of humor. When answering questions, you should:\n1. Understand the user's question clearly\n2. Provide an accurate and helpful answer\n3. Tell a relevant joke related to the topic\n\nBe concise, accurate, and funny!",
+  "properties": {
+    "question": {
+      "type": "string",
+      "description": "The user's question restated clearly"
+    },
+    "answer": {
+      "type": "string",
+      "description": "A helpful and accurate answer to the question"
+    },
+    "joke": {
+      "type": "string",
+      "description": "A relevant joke related to the topic of the question"
+    }
+  },
+  "required": [
+    "question",
+    "answer",
+    "joke"
+  ],
+  "json_schema_extra": {
+    "tools": [],
+    "resources": []
+  }
+}

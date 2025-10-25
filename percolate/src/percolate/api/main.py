@@ -44,6 +44,10 @@ from fastapi import FastAPI
 from loguru import logger
 
 from percolate.api.routers.agents import router as agents_router
+from percolate.api.routers.device import router as device_router
+from percolate.api.routers.health import router as health_router
+from percolate.api.routers.oauth import router as oauth_router
+from percolate.api.routers.oauth_dev import router as oauth_dev_router
 from percolate.mcp.server import create_mcp_server
 from percolate.settings import settings
 from percolate.version import __version__
@@ -78,7 +82,7 @@ def create_app() -> FastAPI:
         lifespan=combined_lifespan,
     )
 
-    # Define health and info endpoints BEFORE mounting MCP app
+    # Define root endpoint BEFORE mounting MCP app
     @app.get("/")
     async def root():
         """Root endpoint with API information."""
@@ -87,12 +91,9 @@ def create_app() -> FastAPI:
             "version": __version__,
             "mcp_endpoint": "/mcp",
             "docs": "/docs",
+            "auth_enabled": settings.auth.enabled,
+            "auth_provider": settings.auth.provider if settings.auth.enabled else "disabled",
         }
-
-    @app.get("/health")
-    async def health():
-        """Health check endpoint."""
-        return {"status": "healthy", "version": __version__}
 
     @app.get("/version")
     async def version():
@@ -101,10 +102,15 @@ def create_app() -> FastAPI:
             "version": __version__,
             "python_version": "3.11+",
             "otel_enabled": settings.otel_enabled,
+            "auth_enabled": settings.auth.enabled,
         }
 
-    # Register routers
-    app.include_router(agents_router)
+    # Register routers (order matters - health/oauth/device are public, agents may require auth)
+    app.include_router(health_router)     # /health, /status - public
+    app.include_router(oauth_router)      # /oauth/* - public
+    app.include_router(oauth_dev_router)  # /oauth/dev/* - dev provider (public)
+    app.include_router(device_router)     # /device/* - device registration (public)
+    app.include_router(agents_router)     # /v1/agents/* - may require auth
 
     # Mount MCP server at root (creates /mcp endpoint)
     app.mount("/", mcp_app)

@@ -113,7 +113,7 @@ percolation/
 │   │       ├── auth/          # OAuth flow tests
 │   │       └── __init__.py
 │   └── pyproject.toml      # UV project configuration
-├── percolate-core/         # Rust implementation (PyO3)
+├── percolate-rocks/        # REM database (Rust + PyO3)
 │   ├── src/
 │   │   ├── lib.rs          # Python bindings
 │   │   ├── memory/         # REM engine implementation
@@ -137,6 +137,7 @@ percolation/
 │   │       ├── encryption.rs   # ChaCha20-Poly1305 AEAD
 │   │       └── kdf.rs          # HKDF key derivation
 │   ├── Cargo.toml          # Rust project manifest
+│   ├── pyproject.toml      # Python package metadata
 │   └── tests/              # Rust unit tests
 ├── schema/                 # Agent-let definitions (JSON schemas)
 │   ├── agentlets/
@@ -164,44 +165,16 @@ percolation/
 │       ├── parsing-pipeline.md
 │       ├── query-layer.md
 │       └── auth-flow.md
-└── .spikes/                # Experimental code and prototypes
-    ├── README.md               # Spikes overview and guidelines
-    ├── rem-db/                 # REM database spike (Python → Rust)
-    │   ├── README.md           # REM database implementation notes
-    │   ├── pyproject.toml      # Python spike project
-    │   └── src/                # Experimental REM implementation
-    └── platform/               # Platform/management layer spike
-        ├── README.md           # Platform architecture notes
-        ├── k8s/                # Kubernetes manifests (Argo)
-        └── src/                # Management services
+├── scripts/                # Build and release automation
+│   ├── bump_version.py     # Version management
+│   └── pr.py               # Release PR creation
+└── .github/workflows/      # CI/CD workflows
+    ├── build-all.yml       # Build orchestrator (DAG)
+    ├── build-rocks.yml     # PyPI wheel builds
+    ├── build-percolate.yml # Docker builds (main API)
+    ├── build-reading.yml   # Docker builds (reading service)
+    └── release-*.yml       # Production release workflows
 ```
-
-### Spikes Folder
-
-The `.spikes/` directory contains **experimental implementations** for testing concepts before integrating into main codebase:
-
-**Purpose:**
-- Iterate rapidly on new ideas without polluting main code
-- Test architectural decisions with working prototypes
-- Find the cleanest solution through experimentation
-- Prove concepts before committing to Rust ports
-
-**Guidelines:**
-- Each spike is a self-contained project with its own README
-- Spikes can be messy, contain dead ends, and incomplete features
-- Document learnings in spike README (what worked, what didn't)
-- Once proven, extract clean implementation to main codebase
-- Spikes are NOT production code - they're learning tools
-
-**Current Spikes:**
-1. **rem-db**: RocksDB-based REM implementation with vector support and SQL predicates (Python prototype for speed)
-2. **platform**: Multi-tenant platform layer with Argo/K8s deployment, tenant management, and gateway
-
-**Workflow:**
-1. Create spike to test concept
-2. Iterate quickly, document findings
-3. Extract clean patterns to main codebase
-4. Archive or delete spike once learnings captured
 
 ### Design Rationale
 
@@ -585,6 +558,56 @@ pub fn parse_document(file_path: &str, tenant_id: &str) -> Result<ParseResult, P
 - Vague "TODO" comments without context
 - Copy-pasted documentation from other projects
 - Marketing language instead of technical precision
+
+## New LLM models (2025)
+
+This section documents NEW models released in 2025 that may not be in Claude's training data. For a complete list of supported models, see Pydantic AI documentation.
+
+### Anthropic Claude (new 2025 releases)
+
+- **Claude Opus 4**: `claude-opus-4-20250514`
+- **Claude Sonnet 4**: `claude-sonnet-4-20250514`
+- **Claude Sonnet 4.5**: `claude-sonnet-4-5-20250929`
+- **Claude Haiku 4.5**: `claude-haiku-4-5-20251001` (verified working)
+
+### OpenAI GPT (new 2025 releases)
+
+- **GPT-5**: `gpt-5`
+- **GPT-4.1**: `gpt-4.1`
+
+### Google Gemini (new 2025 releases)
+
+- **Gemini 3 Ultra**: `gemini-3-ultra`
+- **Gemini 3 Pro**: `gemini-3-pro`
+- **Gemini 3 Flash**: `gemini-3-flash`
+
+### Model selection
+
+Model selection follows this priority:
+
+1. **Explicit override**: `model` parameter in function call
+2. **Context**: `AgentContext.default_model`
+3. **Settings**: Global `settings.default_model` (env: `PERCOLATE_DEFAULT_MODEL`)
+
+Example configuration:
+
+```bash
+# Environment variable
+export PERCOLATE_DEFAULT_MODEL=claude-sonnet-4-20250514
+
+# Or in .env file
+PERCOLATE_DEFAULT_MODEL=gpt-5
+```
+
+Example usage:
+
+```bash
+# Use default model
+percolate agent-run my-agent.yaml "Your prompt"
+
+# Override with specific model
+percolate agent-run my-agent.yaml "Your prompt" --model claude-opus-4-20250514
+```
 
 ## Dependencies
 

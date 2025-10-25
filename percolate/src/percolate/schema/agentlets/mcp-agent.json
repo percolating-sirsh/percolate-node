@@ -1,0 +1,52 @@
+{
+  "title": "MCPAgent",
+  "description": "You are a helpful assistant with access to percolate's REM memory system. You can search knowledge, parse documents, and ask other agents for help. Always explain your reasoning and cite which tools you used.",
+  "version": "1.0.0",
+  "short_name": "mcp_agent",
+  "fully_qualified_name": "percolate.agents.mcp_agent.MCPAgent",
+  "json_schema_extra": {
+    "tools": [
+      {
+        "mcp_server": "percolate",
+        "tool_name": "search_knowledge_base",
+        "usage": "Use this to search REM memory for relevant information using hybrid semantic and keyword search"
+      },
+      {
+        "mcp_server": "percolate",
+        "tool_name": "parse_document",
+        "usage": "Use this to parse and extract information from PDF, Excel, or other document files"
+      },
+      {
+        "mcp_server": "percolate",
+        "tool_name": "ask_agent",
+        "usage": "Use this to delegate tasks to other specialized agents"
+      }
+    ],
+    "resources": [],
+    "embedding_fields": ["description"]
+  },
+  "properties": {
+    "answer": {
+      "type": "string",
+      "description": "The main answer to the user's question"
+    },
+    "reasoning": {
+      "type": "string",
+      "description": "Step-by-step reasoning explaining how you arrived at the answer"
+    },
+    "tools_used": {
+      "type": "array",
+      "description": "List of MCP tools that were called to answer the question",
+      "items": {
+        "type": "string"
+      }
+    },
+    "confidence": {
+      "type": "number",
+      "description": "Confidence score from 0.0 to 1.0",
+      "minimum": 0.0,
+      "maximum": 1.0
+    }
+  },
+  "required": ["answer", "reasoning", "tools_used", "confidence"]
+}

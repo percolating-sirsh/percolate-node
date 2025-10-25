@@ -7,10 +7,12 @@ Key patterns from carrier reference:
 - OpenTelemetry instrumentation (disabled by default in settings)
 """
 
-from typing import Any
+from __future__ import annotations
+
+from typing import Any, List
 
 from loguru import logger
-from pydantic import BaseModel, create_model
+from pydantic import BaseModel, create_model, Field
 from pydantic_ai import Agent
 from pydantic_ai.models import KnownModelName, Model
 
@@ -33,8 +35,6 @@ def _create_model_from_schema(json_schema: dict[str, Any]) -> type[BaseModel]:
     Returns:
         Dynamically created Pydantic model class
     """
-    from pydantic import Field
-
     properties = json_schema.get("properties", {})
     required = json_schema.get("required", [])
     model_name = json_schema.get("title", "DynamicAgent")
@@ -58,7 +58,7 @@ def _create_model_from_schema(json_schema: dict[str, Any]) -> type[BaseModel]:
         # Handle array types with items
         if field_spec.get("type") == "array" and "items" in field_spec:
             item_type = type_map.get(field_spec["items"].get("type", "string"), str)
-            field_type = list[item_type]  # type: ignore
+            field_type = List[item_type]  # type: ignore
 
         # Determine if required
         if field_name in required:
@@ -140,7 +140,12 @@ async def create_agent(
     # Load agent schema from context or use override
     agent_schema = agent_schema_override
     if agent_schema is None and context and context.agent_schema_uri:
-        agent_schema = load_agentlet_schema(context.agent_schema_uri)
+        # Load from percolate-rocks database or filesystem
+        # Database location configured via percolate-rocks settings/env
+        agent_schema = load_agentlet_schema(
+            uri=context.agent_schema_uri,
+            tenant_id=context.tenant_id
+        )
 
     # Determine model: override > context.default_model > settings
     model = model_override or (context.default_model if context else settings.default_model)
@@ -236,10 +241,28 @@ def _build_local_tools(tool_configs: list[dict[str, str]]) -> list:
 
     # Try to import common MCP tools
     try:
-        from percolate.mcp.tools import search_memory
-        mcp_tools["search_memory"] = search_memory
+        from percolate.mcp.tools import search_knowledge_base
+        mcp_tools["search_knowledge_base"] = search_knowledge_base
     except ImportError:
-        logger.debug("search_memory tool not available")
+        logger.debug("search_knowledge_base tool not available")
+
+    try:
+        from percolate.mcp.tools import parse_document
+        mcp_tools["parse_document"] = parse_document
+    except ImportError:
+        logger.debug("parse_document tool not available")
+
+    try:
+        from percolate.mcp.tools import ask_agent
+        mcp_tools["ask_agent"] = ask_agent
+    except ImportError:
+        logger.debug("ask_agent tool not available")
+
+    try:
+        from percolate.mcp.tools import create_agent
+        mcp_tools["create_agent"] = create_agent
+    except ImportError:
+        logger.debug("create_agent tool not available")
 
     tools = []
 

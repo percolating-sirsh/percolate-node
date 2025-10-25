@@ -1,0 +1,124 @@
+[package]
+name = "percolate-rocks"
+version = "0.2.0"
+edition = "2021"
+rust-version = "1.75"
+authors = ["Percolate Team"]
+description = "High-performance embedded database for semantic search, graph queries, and structured data"
+license = "MIT"
+
+[lib]
+name = "percolate_rocks"
+crate-type = ["cdylib", "rlib"]
+
+[[bin]]
+name = "rem"
+path = "src/bin/rem.rs"
+
+[features]
+default = ["python"]
+python = ["pyo3", "pyo3-asyncio"]
+
+[dependencies]
+# Python bindings (optional)
+pyo3 = { version = "0.20", features = ["extension-module", "abi3-py38"], optional = true }
+pyo3-asyncio = { version = "0.20", features = ["tokio-runtime"], optional = true }
+
+# Storage
+rocksdb = { version = "0.22", features = ["multi-threaded-cf"] }
+
+# Async runtime
+tokio = { version = "1", features = ["full"] }
+async-trait = "0.1"
+
+# Serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+serde_yaml = "0.9"
+bincode = "1"
+
+# Error handling
+thiserror = "1"
+anyhow = "1"
+
+# UUID and hashing
+uuid = { version = "1", features = ["v4", "serde"] }
+blake3 = "1"
+
+# Date/time
+chrono = { version = "0.4", features = ["serde"] }
+
+# Vector search
+# Reference impl uses hnswlib (Python bindings)
+# For Rust: instant-distance is a pure Rust HNSW implementation
+instant-distance = "0.6"
+
+# Pattern matching (for SQL LIKE operator)
+regex = "1"
+
+# Memory-mapped I/O (for DiskANN)
+memmap2 = "0.9"
+
+# SQL parsing and execution
+sqlparser = "0.51"
+
+# Embeddings - Reference impl uses sentence-transformers (Python)
+# For Rust, we'll expose sentence-transformers via PyO3 or use OpenAI API
+# NO fastembed - not in reference implementation
+reqwest = { version = "0.12", features = ["json"] }  # For OpenAI API calls
+embed_anything = "0.6"  # Local embedding models (all-MiniLM-L6-v2, etc.)
+
+# Export formats
+csv = "1"  # CSV export
+parquet = { version = "53", features = ["arrow"] }
+arrow = "53"
+
+# Replication (gRPC)
+tonic = "0.12"
+prost = "0.13"
+tokio-stream = "0.1"
+
+# Cryptography (for encryption at rest)
+chacha20poly1305 = "0.10"  # AEAD cipher for entity encryption
+ed25519-dalek = { version = "2", features = ["rand_core"] }  # Signing key pairs
+x25519-dalek = "2"  # Key exchange for ECDH
+argon2 = "0.5"  # Password hashing and key derivation
+rand = "0.8"  # Random number generation
+
+# JSON Schema validation
+jsonschema = "0.18"
+
+# CLI
+clap = { version = "4", features = ["derive", "env"] }
+shellexpand = "3"
+
+# Logging
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# Performance
+rayon = "1"
+crossbeam = "0.8"
+
+[build-dependencies]
+tonic-build = "0.12"
+
+[dev-dependencies]
+tempfile = "3"
+criterion = "0.5"
+proptest = "1"
+
+# Benchmarks commented out until implemented
+# [[bench]]
+# name = "vector_search"
+# harness = false
+
+# [[bench]]
+# name = "sql_query"
+# harness = false
+
+[profile.release]
+opt-level = 3
+lto = "fat"
+codegen-units = 1
+strip = true

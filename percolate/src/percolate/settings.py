@@ -5,13 +5,80 @@ from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
+class AuthSettings(BaseSettings):
+    """Authentication configuration."""
+
+    model_config = SettingsConfigDict(
+        env_prefix="AUTH__",
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
+
+    enabled: bool = Field(default=False, description="Enable authentication")
+    provider: str = Field(
+        default="p8fs",
+        description="Auth provider: disabled, p8fs, oidc, dev",
+    )
+
+    # JWT settings (keypair encryption - ES256 with ECDSA P-256)
+    jwt_private_key: str = Field(
+        default="""-----BEGIN PRIVATE KEY-----
+MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgT428/clvyeL1dpKv
+WnR6jzjomtZaUs7kLBbx9q0KmzOhRANCAARucrqJRUuDGUMaqzzaMeCcljmGJlfo
+Roy5U3K87lqKSGmOjPbdj0x7NjX3FIG8yCiIZtBfWMeHLpBzX1XpO+fW
+-----END PRIVATE KEY-----""",
+        description="JWT private key (PEM format) - CHANGE IN PRODUCTION",
+    )
+    jwt_public_key: str = Field(
+        default="""-----BEGIN PUBLIC KEY-----
+MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEbnK6iUVLgxlDGqs82jHgnJY5hiZX
+6EaMuVNyvO5aikhpjoz23Y9MezY19xSBvMgoiGbQX1jHhy6Qc19V6Tvn1g==
+-----END PUBLIC KEY-----""",
+        description="JWT public key (PEM format)",
+    )
+    jwt_algorithm: str = Field(default="ES256", description="JWT algorithm (ES256)")
+    access_token_expire_minutes: int = Field(
+        default=60, description="Access token lifetime"
+    )
+    refresh_token_expire_days: int = Field(default=30, description="Refresh token lifetime")
+
+    # P8FS device key storage
+    p8fs_server_stored_keys: bool = Field(
+        default=True,
+        description="Server generates and stores device keys (true) vs device-generated (false)",
+    )
+    p8fs_tenant_store: str = Field(
+        default="filesystem",
+        description="Tenant storage backend: filesystem | rem (percolate-rocks)",
+    )
+    p8fs_keys_path: str = Field(
+        default="~/.p8/tenants",
+        description="Path for tenant data (filesystem mode or REM database path)",
+    )
+
+    # OIDC external provider (Microsoft, Google, GitHub, etc.)
+    oidc_issuer_url: str = Field(
+        default="",
+        description="OIDC issuer URL",
+    )
+    oidc_audience: str = Field(default="api", description="Expected audience claim")
+    oidc_client_id: str = Field(default="", description="OIDC client ID")
+    oidc_client_secret: str = Field(default="", description="OIDC client secret")
+    oidc_jwks_cache_ttl: int = Field(
+        default=3600, description="JWKS cache TTL in seconds"
+    )
+
+
 class Settings(BaseSettings):
     """Application configuration."""
 
     model_config = SettingsConfigDict(
         env_file=".env",
         env_prefix="PERCOLATE_",
+        env_nested_delimiter="__",
         case_sensitive=False,
+        extra="ignore",
     )
 
     # API
@@ -24,12 +91,8 @@ class Settings(BaseSettings):
     pg_url: str | None = Field(default=None, description="PostgreSQL URL (optional)")
     redis_url: str = Field(default="redis://localhost:6379", description="Redis URL")
 
-    # Authentication
-    auth_enabled: bool = Field(default=True, description="Enable authentication")
-    jwt_secret_key: str = Field(default="dev-secret-key", description="JWT signing key")
-    jwt_algorithm: str = Field(default="ES256", description="JWT algorithm")
-    access_token_expire_minutes: int = Field(default=60, description="Access token lifetime")
-    refresh_token_expire_days: int = Field(default=30, description="Refresh token lifetime")
+    # Authentication (nested)
+    auth: AuthSettings = Field(default_factory=AuthSettings)
 
     # LLM
     default_model: str = Field(
@@ -52,6 +115,14 @@ class Settings(BaseSettings):
 
     # MCP
     mcp_enabled: bool = Field(default=True, description="Enable MCP server")
+
+    # Percolate-Reading integration
+    percolate_reading_url: str = Field(
+        default="http://localhost:8001", description="Percolate-Reading API URL"
+    )
+    percolate_reading_api_token: str | None = Field(
+        default=None, description="API token for Percolate-Reading (if auth enabled)"
+    )
 
     @model_validator(mode="after")
     def sync_api_keys_to_env(self) -> "Settings":

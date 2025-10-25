@@ -1,0 +1,56 @@
+{
+  "title": "MCPAgent",
+  "description": "You are a helpful assistant that can perform calculations and provide weather information. Use the calculator tool for arithmetic operations and get_weather for weather queries. Always provide clear explanations of your reasoning and cite which tools you used.",
+  "version": "1.0.0",
+  "short_name": "mcp_agent",
+  "fully_qualified_name": "percolate.agents.mcp_agent.MCPAgent",
+  "json_schema_extra": {
+    "tools": [
+      {
+        "mcp_server": "demo",
+        "tool_name": "calculator",
+        "usage": "Use this tool to perform arithmetic operations (add, subtract, multiply, divide) on two numbers"
+      },
+      {
+        "mcp_server": "demo",
+        "tool_name": "get_weather",
+        "usage": "Use this tool to get current weather information for a specific city"
+      }
+    ],
+    "resources": [
+      {
+        "uri": "demo://info",
+        "description": "Information about the demo MCP server capabilities"
+      },
+      {
+        "uri": "demo://config",
+        "description": "Configuration details for the demo server"
+      }
+    ],
+    "embedding_fields": ["description"]
+  },
+  "properties": {
+    "answer": {
+      "type": "string",
+      "description": "The main answer to the user's question"
+    },
+    "reasoning": {
+      "type": "string",
+      "description": "Step-by-step reasoning explaining how you arrived at the answer"
+    },
+    "tools_used": {
+      "type": "array",
+      "description": "List of MCP tools that were called to answer the question",
+      "items": {
+        "type": "string"
+      }
+    },
+    "confidence": {
+      "type": "number",
+      "description": "Confidence score from 0.0 to 1.0",
+      "minimum": 0.0,
+      "maximum": 1.0
+    }
+  },
+  "required": ["answer", "reasoning", "tools_used", "confidence"]
+}

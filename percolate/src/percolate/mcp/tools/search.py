@@ -34,4 +34,17 @@ async def search_knowledge_base(
         5
     """
     # TODO: Implement search via REM memory engine
-    raise NotImplementedError("Knowledge base search not yet implemented")
+    # For now, return dummy data for testing
+    return {
+        "query": query,
+        "tenant_id": tenant_id,
+        "results": [
+            {
+                "type": "resource",
+                "id": "res-1",
+                "content": f"Mock result for query: {query}",
+                "score": 0.95,
+            }
+        ],
+        "total": 1,
+    }
