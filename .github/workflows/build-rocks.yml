@@ -111,7 +111,12 @@ jobs:
           MACOSX_DEPLOYMENT_TARGET: "10.13"
         run: |
           echo "🔨 Building wheel for ${{ matrix.platform }}"
-          maturin build --release --target ${{ matrix.target }}
+          if [[ "${{ matrix.platform }}" == "linux-amd64" ]]; then
+            # Specify manylinux version to avoid building multiple variants
+            maturin build --release --target ${{ matrix.target }} --manylinux 2_34
+          else
+            maturin build --release --target ${{ matrix.target }}
+          fi
           ls -lh target/wheels/
 
       - name: Test wheel (native only)
