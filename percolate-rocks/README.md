@@ -57,6 +57,33 @@ cargo test --lib --no-default-features
 # percolate-rocks = { version = "0.1", default-features = false }
 ```
 
+### Testing cross-compilation locally
+
+To ensure your local builds will work in CI/GitHub Actions, use Docker to replicate the CI environment:
+
+```bash
+# Test ARM64 Linux cross-compilation (what CI does)
+docker run --rm -v "$(pwd):/workspace" -w /workspace rust:latest bash -c "
+  apt-get update && apt-get install -y gcc-aarch64-linux-gnu pkg-config libclang-dev
+  rustup target add aarch64-unknown-linux-gnu
+  cargo build --target aarch64-unknown-linux-gnu --release
+"
+```
+
+**Why local builds might work but CI fails:**
+
+| Environment | Rust Version | Target | OpenSSL | Why It Works |
+|-------------|--------------|--------|---------|--------------|
+| **Your Mac** | Latest (1.87+) | Native (aarch64-apple-darwin) | System OpenSSL (Homebrew) | Local system libs |
+| **GitHub Actions** | Workflow-specified | Cross-compile (aarch64-unknown-linux-gnu) | Vendored (native-tls-vendored feature) | Must compile from source |
+
+**Key differences:**
+1. **Rust version**: Mac typically has latest via rustup, CI uses workflow-pinned version
+2. **Cross-compilation**: Mac → Linux ARM64 requires vendored dependencies (no system libs available)
+3. **Native TLS**: `reqwest` needs `native-tls-vendored` feature for cross-compilation
+
+**If Docker build passes → CI will pass.** This is your local validation gate.
+
 ### Basic Workflow
 
 Define your schema using Pydantic (in `models.py`):
