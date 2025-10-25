@@ -849,16 +849,55 @@ fn cmd_ask(_db_path: &PathBuf, question: &str, plan: bool) -> anyhow::Result<()>
 }
 
 fn cmd_traverse(
-    _db_path: &PathBuf,
-    uuid: &str,
+    db_path: &PathBuf,
+    uuid_str: &str,
     depth: usize,
-    direction: &str,
+    direction_str: &str,
 ) -> anyhow::Result<()> {
-    println!("Graph traversal not yet implemented");
-    println!("  UUID: {}", uuid);
-    println!("  Depth: {}", depth);
-    println!("  Direction: {}", direction);
-    println!("\nRequires: graph traversal (BFS/DFS), edges CF");
+    use percolate_rocks::graph::TraversalDirection;
+
+    let db = Database::open(db_path)?;
+
+    // Parse UUID
+    let start_id = uuid::Uuid::parse_str(uuid_str)?;
+
+    // Parse direction
+    let direction = match direction_str {
+        "out" => TraversalDirection::Out,
+        "in" => TraversalDirection::In,
+        "both" => TraversalDirection::Both,
+        _ => anyhow::bail!("Invalid direction: {}. Use 'out', 'in', or 'both'", direction_str),
+    };
+
+    // Perform BFS traversal
+    let nodes = db.traverse_bfs(start_id, direction, depth, None)?;
+
+    println!("Graph traversal from {} (depth: {}, direction: {})", start_id, depth, direction_str);
+    println!("Found {} node(s)", nodes.len());
+    println!();
+
+    // Get and display each entity
+    for (i, node_id) in nodes.iter().enumerate() {
+        // Try to get entity (it might not exist if it was deleted)
+        if let Some(entity) = db.get("default", *node_id)? {
+            println!("{}. ID: {}", i + 1, node_id);
+            println!("   Type: {}", entity.system.entity_type);
+
+            // Show name if available
+            if let Some(name) = entity.properties.get("name") {
+                println!("   Name: {}", name.as_str().unwrap_or(""));
+            }
+
+            // Show email if available
+            if let Some(email) = entity.properties.get("email") {
+                println!("   Email: {}", email.as_str().unwrap_or(""));
+            }
+        } else {
+            println!("{}. ID: {} (entity not found)", i + 1, node_id);
+        }
+        println!();
+    }
+
     Ok(())
 }
 

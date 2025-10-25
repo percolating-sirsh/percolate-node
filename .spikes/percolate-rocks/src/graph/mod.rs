@@ -6,4 +6,4 @@ pub mod edges;
 pub mod traversal;
 
 pub use edges::EdgeManager;
-pub use traversal::{GraphTraversal, TraversalDirection};
+pub use traversal::{GraphTraversal, TraversalDirection, EdgeProvider};

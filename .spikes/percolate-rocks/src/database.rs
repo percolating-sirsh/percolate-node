@@ -1121,6 +1121,98 @@ impl Database {
 
         Ok(())
     }
+
+    /// Breadth-first traversal from starting entity.
+    ///
+    /// # Arguments
+    ///
+    /// * `start_id` - Starting entity UUID
+    /// * `direction` - Traversal direction (out/in/both)
+    /// * `depth` - Maximum traversal depth
+    /// * `rel_type` - Optional relationship type filter
+    ///
+    /// # Returns
+    ///
+    /// Vector of entity UUIDs in BFS order
+    ///
+    /// # Errors
+    ///
+    /// Returns `DatabaseError` if traversal fails
+    pub fn traverse_bfs(
+        &self,
+        start_id: uuid::Uuid,
+        direction: crate::graph::TraversalDirection,
+        depth: usize,
+        rel_type: Option<&str>,
+    ) -> Result<Vec<uuid::Uuid>> {
+        let traversal = crate::graph::GraphTraversal::new(self as &dyn crate::graph::EdgeProvider);
+        traversal.bfs(start_id, direction, depth, rel_type)
+    }
+
+    /// Depth-first traversal from starting entity.
+    ///
+    /// # Arguments
+    ///
+    /// * `start_id` - Starting entity UUID
+    /// * `direction` - Traversal direction (out/in/both)
+    /// * `depth` - Maximum traversal depth
+    /// * `rel_type` - Optional relationship type filter
+    ///
+    /// # Returns
+    ///
+    /// Vector of entity UUIDs in DFS order
+    ///
+    /// # Errors
+    ///
+    /// Returns `DatabaseError` if traversal fails
+    pub fn traverse_dfs(
+        &self,
+        start_id: uuid::Uuid,
+        direction: crate::graph::TraversalDirection,
+        depth: usize,
+        rel_type: Option<&str>,
+    ) -> Result<Vec<uuid::Uuid>> {
+        let traversal = crate::graph::GraphTraversal::new(self as &dyn crate::graph::EdgeProvider);
+        traversal.dfs(start_id, direction, depth, rel_type)
+    }
+
+    /// Find shortest path between two entities.
+    ///
+    /// # Arguments
+    ///
+    /// * `start_id` - Starting entity UUID
+    /// * `end_id` - Target entity UUID
+    /// * `direction` - Traversal direction (out/in/both)
+    /// * `max_depth` - Maximum search depth
+    ///
+    /// # Returns
+    ///
+    /// Vector of entity UUIDs representing path, or empty if no path found
+    ///
+    /// # Errors
+    ///
+    /// Returns `DatabaseError` if search fails
+    pub fn shortest_path(
+        &self,
+        start_id: uuid::Uuid,
+        end_id: uuid::Uuid,
+        direction: crate::graph::TraversalDirection,
+        max_depth: usize,
+    ) -> Result<Vec<uuid::Uuid>> {
+        let traversal = crate::graph::GraphTraversal::new(self as &dyn crate::graph::EdgeProvider);
+        traversal.shortest_path(start_id, end_id, direction, max_depth)
+    }
+}
+
+/// Implement EdgeProvider trait for Database.
+impl crate::graph::EdgeProvider for Database {
+    fn get_outgoing(&self, node: uuid::Uuid, rel_type: Option<&str>) -> Result<Vec<Edge>> {
+        self.get_edges(node, rel_type)
+    }
+
+    fn get_incoming(&self, node: uuid::Uuid, rel_type: Option<&str>) -> Result<Vec<Edge>> {
+        self.get_incoming_edges(node, rel_type)
+    }
 }
 
 /// Extract key value from entity data following same priority as generate_uuid.
@@ -2136,5 +2228,196 @@ mod tests {
         assert_eq!(outgoing[0].src, incoming[0].src);
         assert_eq!(outgoing[0].dst, incoming[0].dst);
         assert_eq!(outgoing[0].rel_type, incoming[0].rel_type);
+    }
+
+    #[test]
+    fn test_traverse_bfs() {
+        let db = Database::open_temp().unwrap();
+
+        // Register schema
+        let schema = serde_json::json!({
+            "title": "Person",
+            "version": "1.0.0",
+            "short_name": "person",
+            "properties": {"name": {"type": "string"}},
+            "required": ["name"]
+        });
+
+        db.register_schema("person", schema).unwrap();
+
+        // Create a graph: A -> B -> C -> D
+        let a = db.insert("tenant1", "person", serde_json::json!({"name": "A"})).unwrap();
+        let b = db.insert("tenant1", "person", serde_json::json!({"name": "B"})).unwrap();
+        let c = db.insert("tenant1", "person", serde_json::json!({"name": "C"})).unwrap();
+        let d = db.insert("tenant1", "person", serde_json::json!({"name": "D"})).unwrap();
+
+        db.add_edge("tenant1", a, b, "knows", None).unwrap();
+        db.add_edge("tenant1", b, c, "knows", None).unwrap();
+        db.add_edge("tenant1", c, d, "knows", None).unwrap();
+
+        // BFS from A with depth 2 should find A, B, C
+        let result = db.traverse_bfs(a, crate::graph::TraversalDirection::Out, 2, None).unwrap();
+        assert_eq!(result.len(), 3);
+        assert_eq!(result[0], a);
+        assert_eq!(result[1], b);
+        assert_eq!(result[2], c);
+
+        // BFS from A with depth 3 should find all
+        let result = db.traverse_bfs(a, crate::graph::TraversalDirection::Out, 3, None).unwrap();
+        assert_eq!(result.len(), 4);
+    }
+
+    #[test]
+    fn test_traverse_dfs() {
+        let db = Database::open_temp().unwrap();
+
+        // Register schema
+        let schema = serde_json::json!({
+            "title": "Person",
+            "version": "1.0.0",
+            "short_name": "person",
+            "properties": {"name": {"type": "string"}},
+            "required": ["name"]
+        });
+
+        db.register_schema("person", schema).unwrap();
+
+        // Create a graph: A -> B, A -> C
+        let a = db.insert("tenant1", "person", serde_json::json!({"name": "A"})).unwrap();
+        let b = db.insert("tenant1", "person", serde_json::json!({"name": "B"})).unwrap();
+        let c = db.insert("tenant1", "person", serde_json::json!({"name": "C"})).unwrap();
+
+        db.add_edge("tenant1", a, b, "knows", None).unwrap();
+        db.add_edge("tenant1", a, c, "knows", None).unwrap();
+
+        // DFS from A should find all 3
+        let result = db.traverse_dfs(a, crate::graph::TraversalDirection::Out, 2, None).unwrap();
+        assert_eq!(result.len(), 3);
+        assert_eq!(result[0], a);
+        // B and C order depends on edge insertion order
+    }
+
+    #[test]
+    fn test_traverse_incoming() {
+        let db = Database::open_temp().unwrap();
+
+        // Register schema
+        let schema = serde_json::json!({
+            "title": "Person",
+            "version": "1.0.0",
+            "short_name": "person",
+            "properties": {"name": {"type": "string"}},
+            "required": ["name"]
+        });
+
+        db.register_schema("person", schema).unwrap();
+
+        // Create a graph: A -> C, B -> C
+        let a = db.insert("tenant1", "person", serde_json::json!({"name": "A"})).unwrap();
+        let b = db.insert("tenant1", "person", serde_json::json!({"name": "B"})).unwrap();
+        let c = db.insert("tenant1", "person", serde_json::json!({"name": "C"})).unwrap();
+
+        db.add_edge("tenant1", a, c, "knows", None).unwrap();
+        db.add_edge("tenant1", b, c, "knows", None).unwrap();
+
+        // Traverse incoming from C should find C, A, B
+        let result = db.traverse_bfs(c, crate::graph::TraversalDirection::In, 2, None).unwrap();
+        assert_eq!(result.len(), 3);
+        assert_eq!(result[0], c);
+        assert!(result.contains(&a));
+        assert!(result.contains(&b));
+    }
+
+    #[test]
+    fn test_shortest_path() {
+        let db = Database::open_temp().unwrap();
+
+        // Register schema
+        let schema = serde_json::json!({
+            "title": "Person",
+            "version": "1.0.0",
+            "short_name": "person",
+            "properties": {"name": {"type": "string"}},
+            "required": ["name"]
+        });
+
+        db.register_schema("person", schema).unwrap();
+
+        // Create a graph: A -> B -> C -> D
+        let a = db.insert("tenant1", "person", serde_json::json!({"name": "A"})).unwrap();
+        let b = db.insert("tenant1", "person", serde_json::json!({"name": "B"})).unwrap();
+        let c = db.insert("tenant1", "person", serde_json::json!({"name": "C"})).unwrap();
+        let d = db.insert("tenant1", "person", serde_json::json!({"name": "D"})).unwrap();
+
+        db.add_edge("tenant1", a, b, "knows", None).unwrap();
+        db.add_edge("tenant1", b, c, "knows", None).unwrap();
+        db.add_edge("tenant1", c, d, "knows", None).unwrap();
+
+        // Find path from A to D
+        let path = db.shortest_path(a, d, crate::graph::TraversalDirection::Out, 5).unwrap();
+        assert_eq!(path.len(), 4);
+        assert_eq!(path[0], a);
+        assert_eq!(path[1], b);
+        assert_eq!(path[2], c);
+        assert_eq!(path[3], d);
+
+        // No path exists (wrong direction)
+        let path = db.shortest_path(d, a, crate::graph::TraversalDirection::Out, 5).unwrap();
+        assert_eq!(path.len(), 0);
+    }
+
+    #[test]
+    fn test_shortest_path_not_found() {
+        let db = Database::open_temp().unwrap();
+
+        // Register schema
+        let schema = serde_json::json!({
+            "title": "Person",
+            "version": "1.0.0",
+            "short_name": "person",
+            "properties": {"name": {"type": "string"}},
+            "required": ["name"]
+        });
+
+        db.register_schema("person", schema).unwrap();
+
+        // Create two disconnected nodes
+        let a = db.insert("tenant1", "person", serde_json::json!({"name": "A"})).unwrap();
+        let b = db.insert("tenant1", "person", serde_json::json!({"name": "B"})).unwrap();
+
+        // No path should exist
+        let path = db.shortest_path(a, b, crate::graph::TraversalDirection::Out, 5).unwrap();
+        assert_eq!(path.len(), 0);
+    }
+
+    #[test]
+    fn test_traverse_with_rel_type_filter() {
+        let db = Database::open_temp().unwrap();
+
+        // Register schema
+        let schema = serde_json::json!({
+            "title": "Person",
+            "version": "1.0.0",
+            "short_name": "person",
+            "properties": {"name": {"type": "string"}},
+            "required": ["name"]
+        });
+
+        db.register_schema("person", schema).unwrap();
+
+        // Create a graph with different relationship types
+        let a = db.insert("tenant1", "person", serde_json::json!({"name": "A"})).unwrap();
+        let b = db.insert("tenant1", "person", serde_json::json!({"name": "B"})).unwrap();
+        let c = db.insert("tenant1", "person", serde_json::json!({"name": "C"})).unwrap();
+
+        db.add_edge("tenant1", a, b, "knows", None).unwrap();
+        db.add_edge("tenant1", a, c, "works_with", None).unwrap();
+
+        // Only follow "knows" edges
+        let result = db.traverse_bfs(a, crate::graph::TraversalDirection::Out, 2, Some("knows")).unwrap();
+        assert_eq!(result.len(), 2); // A and B only
+        assert!(result.contains(&a));
+        assert!(result.contains(&b));
+        assert!(!result.contains(&c));
     }
 }
