@@ -246,6 +246,99 @@ impl Database {
         Ok(id)
     }
 
+    /// Batch insert multiple entities (optimized for bulk loading).
+    ///
+    /// # Arguments
+    ///
+    /// * `tenant_id` - Tenant identifier
+    /// * `table` - Table/schema name
+    /// * `entities` - Vector of entity data objects
+    ///
+    /// # Returns
+    ///
+    /// Vector of inserted entity UUIDs (in same order as input)
+    ///
+    /// # Errors
+    ///
+    /// Returns error if schema not found or any validation fails.
+    /// On error, entire batch is rolled back (no partial inserts).
+    ///
+    /// # Performance
+    ///
+    /// Uses RocksDB write batch for atomic, efficient bulk inserts.
+    /// Significantly faster than individual inserts for large datasets.
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// let people = vec![
+    ///     json!({"name": "Alice", "age": 30}),
+    ///     json!({"name": "Bob", "age": 25}),
+    ///     json!({"name": "Charlie", "age": 35}),
+    /// ];
+    /// let ids = db.batch_insert("tenant1", "person", people)?;
+    /// assert_eq!(ids.len(), 3);
+    /// ```
+    pub fn batch_insert(
+        &self,
+        tenant_id: &str,
+        table: &str,
+        entities: Vec<serde_json::Value>,
+    ) -> Result<Vec<uuid::Uuid>> {
+        use crate::types::{DatabaseError, generate_uuid};
+        use crate::schema::{SchemaValidator, PydanticSchemaParser};
+        use rocksdb::WriteBatch;
+
+        // Get schema once
+        let registry = self.registry.read()
+            .map_err(|e| DatabaseError::InternalError(format!("Lock error: {}", e)))?;
+
+        let schema = registry.get(table)?;
+        let validator = SchemaValidator::new(schema.clone())?;
+        let key_field_opt = PydanticSchemaParser::extract_key_field(schema);
+        let key_field = key_field_opt.as_deref();
+
+        // Validate all entities first (fail fast before writing)
+        for data in &entities {
+            validator.validate(data)?;
+        }
+
+        // Prepare batch write
+        let mut batch = WriteBatch::default();
+        let mut ids = Vec::with_capacity(entities.len());
+
+        for data in entities {
+            // Generate deterministic UUID
+            let id = generate_uuid(table, &data, key_field);
+            ids.push(id);
+
+            // Create entity with system fields
+            let entity = Entity::new(id, table.to_string(), data.clone());
+
+            // Serialize entity
+            let entity_key = crate::storage::keys::encode_entity_key(tenant_id, id);
+            let entity_value = serde_json::to_vec(&entity)?;
+
+            // Add to batch
+            let cf = self.storage.cf_handle(crate::storage::column_families::CF_ENTITIES);
+            batch.put_cf(&cf, &entity_key, &entity_value);
+
+            // Add key index to batch
+            if let Some(key_value) = extract_key_value(&entity.properties, key_field) {
+                let index_key = crate::storage::keys::encode_key_index(tenant_id, &key_value, id);
+                let index_value = serde_json::json!({"type": table}).to_string();
+                let cf_key_index = self.storage.cf_handle(crate::storage::column_families::CF_KEY_INDEX);
+                batch.put_cf(&cf_key_index, &index_key, index_value.as_bytes());
+            }
+        }
+
+        // Write batch atomically
+        self.storage.db().write(batch)
+            .map_err(|e| DatabaseError::StorageError(e))?;
+
+        Ok(ids)
+    }
+
     /// Get entity by ID.
     ///
     /// # Arguments
@@ -532,6 +625,93 @@ impl Database {
         }
 
         Ok(entities)
+    }
+
+    /// Count entities in a table.
+    ///
+    /// # Arguments
+    ///
+    /// * `tenant_id` - Tenant identifier
+    /// * `table` - Table/schema name
+    /// * `include_deleted` - Include soft-deleted entities (default: false)
+    ///
+    /// # Returns
+    ///
+    /// Number of entities matching criteria
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// let count = db.count("tenant1", "person", false)?;
+    /// println!("Active persons: {}", count);
+    /// ```
+    pub fn count(&self, tenant_id: &str, table: &str, include_deleted: bool) -> Result<usize> {
+        use rocksdb::IteratorMode;
+
+        let prefix = format!("entity:{}:", tenant_id).into_bytes();
+        let cf = self.storage.cf_handle(crate::storage::column_families::CF_ENTITIES);
+
+        let iter = self.storage.db().iterator_cf(
+            &cf,
+            IteratorMode::From(&prefix, rocksdb::Direction::Forward),
+        );
+
+        let mut count = 0;
+
+        for item in iter {
+            let (key, value) = item.map_err(|e| crate::types::DatabaseError::StorageError(e))?;
+
+            if !key.starts_with(&prefix) {
+                break;
+            }
+
+            let entity: Entity = serde_json::from_slice(&value)?;
+
+            if entity.system.entity_type != table {
+                continue;
+            }
+
+            if !include_deleted && entity.is_deleted() {
+                continue;
+            }
+
+            count += 1;
+        }
+
+        Ok(count)
+    }
+
+    /// Check if entity exists.
+    ///
+    /// # Arguments
+    ///
+    /// * `tenant_id` - Tenant identifier
+    /// * `entity_id` - Entity UUID
+    ///
+    /// # Returns
+    ///
+    /// `true` if entity exists, `false` otherwise
+    ///
+    /// # Note
+    ///
+    /// More efficient than `get()` when you only need to check existence.
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// if db.exists("tenant1", entity_id)? {
+    ///     println!("Entity exists");
+    /// }
+    /// ```
+    pub fn exists(&self, tenant_id: &str, entity_id: uuid::Uuid) -> Result<bool> {
+        let key = crate::storage::keys::encode_entity_key(tenant_id, entity_id);
+
+        let value = self.storage.get(
+            crate::storage::column_families::CF_ENTITIES,
+            &key,
+        )?;
+
+        Ok(value.is_some())
     }
 
     /// Get entity by key field value (reverse lookup).
@@ -1280,5 +1460,237 @@ mod tests {
         // List only projects
         let projects = db.list("tenant1", "project", false, None).unwrap();
         assert_eq!(projects.len(), 1);
+    }
+
+    #[test]
+    fn test_batch_insert() {
+        let db = Database::open_temp().unwrap();
+
+        // Register schema
+        let schema = serde_json::json!({
+            "title": "Person",
+            "version": "1.0.0",
+            "short_name": "person",
+            "properties": {
+                "name": {"type": "string"},
+                "age": {"type": "number"}
+            },
+            "required": ["name"]
+        });
+
+        db.register_schema("person", schema).unwrap();
+
+        // Batch insert
+        let people = vec![
+            serde_json::json!({"name": "Alice", "age": 30}),
+            serde_json::json!({"name": "Bob", "age": 25}),
+            serde_json::json!({"name": "Charlie", "age": 35}),
+        ];
+
+        let ids = db.batch_insert("tenant1", "person", people).unwrap();
+        assert_eq!(ids.len(), 3);
+
+        // Verify all entities were inserted
+        let entities = db.list("tenant1", "person", false, None).unwrap();
+        assert_eq!(entities.len(), 3);
+
+        // Verify IDs match
+        for id in &ids {
+            assert!(db.exists("tenant1", *id).unwrap());
+        }
+    }
+
+    #[test]
+    fn test_batch_insert_validation_failure() {
+        let db = Database::open_temp().unwrap();
+
+        // Register schema with strict validation
+        let schema = serde_json::json!({
+            "title": "Person",
+            "version": "1.0.0",
+            "short_name": "person",
+            "properties": {
+                "name": {"type": "string"},
+                "age": {"type": "number"}
+            },
+            "required": ["name", "age"]
+        });
+
+        db.register_schema("person", schema).unwrap();
+
+        // Batch with one invalid entity (missing required field)
+        let people = vec![
+            serde_json::json!({"name": "Alice", "age": 30}),
+            serde_json::json!({"name": "Bob"}),  // Missing required "age"
+            serde_json::json!({"name": "Charlie", "age": 35}),
+        ];
+
+        let result = db.batch_insert("tenant1", "person", people);
+        assert!(result.is_err());
+
+        // No entities should be inserted (atomic rollback)
+        let entities = db.list("tenant1", "person", false, None).unwrap();
+        assert_eq!(entities.len(), 0);
+    }
+
+    #[test]
+    fn test_batch_insert_deterministic_uuids() {
+        let db = Database::open_temp().unwrap();
+
+        // Register schema with key_field
+        let schema = serde_json::json!({
+            "title": "User",
+            "version": "1.0.0",
+            "short_name": "user",
+            "json_schema_extra": {
+                "key_field": "email"
+            },
+            "properties": {
+                "email": {"type": "string"},
+                "name": {"type": "string"}
+            },
+            "required": ["email", "name"]
+        });
+
+        db.register_schema("user", schema).unwrap();
+
+        // Batch insert
+        let users = vec![
+            serde_json::json!({"email": "alice@example.com", "name": "Alice"}),
+            serde_json::json!({"email": "bob@example.com", "name": "Bob"}),
+        ];
+
+        let ids = db.batch_insert("tenant1", "user", users).unwrap();
+
+        // Insert same data again
+        let users2 = vec![
+            serde_json::json!({"email": "alice@example.com", "name": "Alice"}),
+            serde_json::json!({"email": "bob@example.com", "name": "Bob"}),
+        ];
+
+        let ids2 = db.batch_insert("tenant1", "user", users2).unwrap();
+
+        // Same data should generate same UUIDs
+        assert_eq!(ids, ids2);
+    }
+
+    #[test]
+    fn test_count() {
+        let db = Database::open_temp().unwrap();
+
+        // Register schema
+        let schema = serde_json::json!({
+            "title": "Person",
+            "version": "1.0.0",
+            "short_name": "person",
+            "properties": {
+                "name": {"type": "string"}
+            },
+            "required": ["name"]
+        });
+
+        db.register_schema("person", schema).unwrap();
+
+        // Initially zero
+        assert_eq!(db.count("tenant1", "person", false).unwrap(), 0);
+
+        // Insert entities
+        db.insert("tenant1", "person", serde_json::json!({"name": "Alice"})).unwrap();
+        db.insert("tenant1", "person", serde_json::json!({"name": "Bob"})).unwrap();
+        db.insert("tenant1", "person", serde_json::json!({"name": "Charlie"})).unwrap();
+
+        // Count should be 3
+        assert_eq!(db.count("tenant1", "person", false).unwrap(), 3);
+    }
+
+    #[test]
+    fn test_count_excludes_deleted() {
+        let db = Database::open_temp().unwrap();
+
+        // Register schema
+        let schema = serde_json::json!({
+            "title": "Person",
+            "version": "1.0.0",
+            "short_name": "person",
+            "properties": {
+                "name": {"type": "string"}
+            },
+            "required": ["name"]
+        });
+
+        db.register_schema("person", schema).unwrap();
+
+        // Insert entities
+        let id1 = db.insert("tenant1", "person", serde_json::json!({"name": "Alice"})).unwrap();
+        db.insert("tenant1", "person", serde_json::json!({"name": "Bob"})).unwrap();
+
+        // Soft delete one
+        db.delete("tenant1", id1).unwrap();
+
+        // Count without deleted
+        assert_eq!(db.count("tenant1", "person", false).unwrap(), 1);
+
+        // Count with deleted
+        assert_eq!(db.count("tenant1", "person", true).unwrap(), 2);
+    }
+
+    #[test]
+    fn test_exists() {
+        let db = Database::open_temp().unwrap();
+
+        // Register schema
+        let schema = serde_json::json!({
+            "title": "Person",
+            "version": "1.0.0",
+            "short_name": "person",
+            "properties": {
+                "name": {"type": "string"}
+            },
+            "required": ["name"]
+        });
+
+        db.register_schema("person", schema).unwrap();
+
+        // Insert entity
+        let id = db.insert("tenant1", "person", serde_json::json!({"name": "Alice"})).unwrap();
+
+        // Should exist
+        assert!(db.exists("tenant1", id).unwrap());
+
+        // Non-existent UUID
+        assert!(!db.exists("tenant1", uuid::Uuid::new_v4()).unwrap());
+
+        // Hard delete
+        db.hard_delete("tenant1", id).unwrap();
+
+        // Should not exist
+        assert!(!db.exists("tenant1", id).unwrap());
+    }
+
+    #[test]
+    fn test_exists_with_soft_delete() {
+        let db = Database::open_temp().unwrap();
+
+        // Register schema
+        let schema = serde_json::json!({
+            "title": "Person",
+            "version": "1.0.0",
+            "short_name": "person",
+            "properties": {
+                "name": {"type": "string"}
+            },
+            "required": ["name"]
+        });
+
+        db.register_schema("person", schema).unwrap();
+
+        // Insert entity
+        let id = db.insert("tenant1", "person", serde_json::json!({"name": "Alice"})).unwrap();
+
+        // Soft delete
+        db.delete("tenant1", id).unwrap();
+
+        // Should still exist (soft deleted)
+        assert!(db.exists("tenant1", id).unwrap());
     }
 }
