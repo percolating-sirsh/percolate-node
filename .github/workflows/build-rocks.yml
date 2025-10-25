@@ -108,9 +108,14 @@ jobs:
           path: ${{ env.PROJECT_DIR }}/target/wheels/*.whl
           retention-days: 30
 
-  test-wheels:
-    needs: build-wheels
+  test-publish-summarize:
+    name: Test, publish & summarize
+    needs: [check-version, build-wheels]
     runs-on: ubuntu-latest
+    permissions:
+      id-token: write  # For trusted publishing
+      contents: read
+
     steps:
       - uses: actions/checkout@v4
 
@@ -129,33 +134,13 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Install and test wheel
+      - name: Test wheel
         run: |
           WHEEL=$(find wheels/wheel-linux-amd64/ -name "*.whl" | head -1)
           echo "🧪 Testing wheel: ${WHEEL}"
           pip install "${WHEEL}"
           python3 -c "import rem_db; print('✓ Package import works')"
           python3 -c "from rem_db import Database; print('✓ Database class accessible')"
-
-  publish-pypi:
-    needs: [check-version, test-wheels]
-    runs-on: ubuntu-latest
-    permissions:
-      id-token: write  # For trusted publishing
-      contents: read
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Download all wheels
-        uses: actions/download-artifact@v4
-        with:
-          path: wheels/
-
-      - name: Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
 
       - name: Install maturin
         run: pip install maturin
@@ -178,42 +163,11 @@ jobs:
           echo "✅ Published to PyPI"
           echo "🔗 https://pypi.org/project/percolate-rocks/${VERSION}/"
 
-      - name: Store metadata
-        run: |
-          mkdir -p build-metadata/
-          VERSION="${{ needs.check-version.outputs.version }}"
-          echo "${VERSION}" > build-metadata/version.txt
-          echo "pypi" > build-metadata/repository.txt
-          echo "$(date -u +'%Y.%m.%d.%H%M')-build.${{ github.run_number }}" > build-metadata/build-id.txt
-
-      - name: Upload metadata
-        uses: actions/upload-artifact@v4
-        with:
-          name: build-metadata
-          path: build-metadata/
-          retention-days: 30
-
-  create-summary:
-    needs: [check-version, publish-pypi]
-    runs-on: ubuntu-latest
-    if: always()
-    steps:
       - name: Create build summary
         run: |
-          echo "### 🐍 percolate-rocks Build Summary" >> $GITHUB_STEP_SUMMARY
+          VERSION="${{ needs.check-version.outputs.version }}"
+          echo "### 🐍 percolate-rocks v${VERSION}" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "| Field | Value |" >> $GITHUB_STEP_SUMMARY
-          echo "|-------|-------|" >> $GITHUB_STEP_SUMMARY
-          echo "| **Version** | ${{ needs.check-version.outputs.version }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| **Tag** | ${{ github.ref_name }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| **Repository** | PyPI |" >> $GITHUB_STEP_SUMMARY
-          echo "| **Build** | ${{ github.run_number }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| **Status** | ${{ job.status }} |" >> $GITHUB_STEP_SUMMARY
+          echo "✅ Published to PyPI: https://pypi.org/project/percolate-rocks/${VERSION}/" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "🔗 [View on PyPI](https://pypi.org/project/percolate-rocks/${{ needs.check-version.outputs.version }}/)" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "#### 📦 Platform Wheels" >> $GITHUB_STEP_SUMMARY
-          echo "- Linux x86_64" >> $GITHUB_STEP_SUMMARY
-          echo "- Linux ARM64" >> $GITHUB_STEP_SUMMARY
-          echo "- macOS ARM64 (Apple Silicon)" >> $GITHUB_STEP_SUMMARY
-          echo "- macOS x86_64 (Intel)" >> $GITHUB_STEP_SUMMARY
+          echo "**Platforms:** Linux (x86_64, ARM64), macOS (Intel, Apple Silicon)" >> $GITHUB_STEP_SUMMARY
