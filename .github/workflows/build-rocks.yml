@@ -118,7 +118,10 @@ jobs:
         if: matrix.platform == 'linux-amd64' || matrix.platform == 'darwin-arm64'
         working-directory: ${{ env.PROJECT_DIR }}
         run: |
-          pip install target/wheels/*.whl
+          # Install only the first wheel to avoid conflicts if multiple manylinux versions exist
+          WHEEL=$(find target/wheels/ -name "*.whl" | sort | head -1)
+          echo "🧪 Testing wheel: ${WHEEL}"
+          pip install "${WHEEL}"
           python3 -c "import rem_db; print('✓ Import successful'); print(f'Version: {rem_db.__version__}')"
 
       - name: Upload wheel
