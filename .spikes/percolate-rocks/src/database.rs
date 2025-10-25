@@ -2458,4 +2458,387 @@ mod tests {
         assert!(result.contains(&b));
         assert!(!result.contains(&c));
     }
+
+    // SQL Query Tests
+
+    #[test]
+    fn test_query_sql_select_all() {
+        let db = Database::open_temp().unwrap();
+
+        // Register schema
+        let schema = serde_json::json!({
+            "title": "Person",
+            "version": "1.0.0",
+            "short_name": "person",
+            "properties": {
+                "name": {"type": "string"},
+                "age": {"type": "number"}
+            },
+            "required": ["name"]
+        });
+
+        db.register_schema("person", schema).unwrap();
+
+        // Insert test data
+        db.insert("tenant1", "person", serde_json::json!({"name": "Alice", "age": 30})).unwrap();
+        db.insert("tenant1", "person", serde_json::json!({"name": "Bob", "age": 25})).unwrap();
+        db.insert("tenant1", "person", serde_json::json!({"name": "Charlie", "age": 35})).unwrap();
+
+        // Query all
+        let result = db.query_sql("tenant1", "SELECT * FROM person").unwrap();
+        let rows = result.as_array().unwrap();
+        assert_eq!(rows.len(), 3);
+    }
+
+    #[test]
+    fn test_query_sql_where_comparison() {
+        let db = Database::open_temp().unwrap();
+
+        let schema = serde_json::json!({
+            "title": "Person",
+            "version": "1.0.0",
+            "short_name": "person",
+            "properties": {
+                "name": {"type": "string"},
+                "age": {"type": "number"}
+            },
+            "required": ["name"]
+        });
+
+        db.register_schema("person", schema).unwrap();
+
+        db.insert("tenant1", "person", serde_json::json!({"name": "Alice", "age": 30})).unwrap();
+        db.insert("tenant1", "person", serde_json::json!({"name": "Bob", "age": 25})).unwrap();
+        db.insert("tenant1", "person", serde_json::json!({"name": "Charlie", "age": 35})).unwrap();
+
+        // Test greater than
+        let result = db.query_sql("tenant1", "SELECT * FROM person WHERE age > 30").unwrap();
+        let rows = result.as_array().unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0]["name"], "Charlie");
+
+        // Test less than
+        let result = db.query_sql("tenant1", "SELECT * FROM person WHERE age < 30").unwrap();
+        let rows = result.as_array().unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0]["name"], "Bob");
+
+        // Test equality
+        let result = db.query_sql("tenant1", "SELECT * FROM person WHERE age = 30").unwrap();
+        let rows = result.as_array().unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0]["name"], "Alice");
+    }
+
+    #[test]
+    fn test_query_sql_where_string_equality() {
+        let db = Database::open_temp().unwrap();
+
+        let schema = serde_json::json!({
+            "title": "Person",
+            "version": "1.0.0",
+            "short_name": "person",
+            "properties": {
+                "name": {"type": "string"},
+                "role": {"type": "string"}
+            },
+            "required": ["name"]
+        });
+
+        db.register_schema("person", schema).unwrap();
+
+        db.insert("tenant1", "person", serde_json::json!({"name": "Alice", "role": "engineer"})).unwrap();
+        db.insert("tenant1", "person", serde_json::json!({"name": "Bob", "role": "designer"})).unwrap();
+        db.insert("tenant1", "person", serde_json::json!({"name": "Charlie", "role": "engineer"})).unwrap();
+
+        // Test string equality (case-insensitive)
+        let result = db.query_sql("tenant1", "SELECT * FROM person WHERE role = 'engineer'").unwrap();
+        let rows = result.as_array().unwrap();
+        assert_eq!(rows.len(), 2);
+
+        // Case insensitive
+        let result = db.query_sql("tenant1", "SELECT * FROM person WHERE role = 'ENGINEER'").unwrap();
+        let rows = result.as_array().unwrap();
+        assert_eq!(rows.len(), 2);
+    }
+
+    #[test]
+    fn test_query_sql_where_and_or() {
+        let db = Database::open_temp().unwrap();
+
+        let schema = serde_json::json!({
+            "title": "Person",
+            "version": "1.0.0",
+            "short_name": "person",
+            "properties": {
+                "name": {"type": "string"},
+                "age": {"type": "number"},
+                "role": {"type": "string"}
+            },
+            "required": ["name"]
+        });
+
+        db.register_schema("person", schema).unwrap();
+
+        db.insert("tenant1", "person", serde_json::json!({"name": "Alice", "age": 30, "role": "engineer"})).unwrap();
+        db.insert("tenant1", "person", serde_json::json!({"name": "Bob", "age": 25, "role": "designer"})).unwrap();
+        db.insert("tenant1", "person", serde_json::json!({"name": "Charlie", "age": 35, "role": "engineer"})).unwrap();
+        db.insert("tenant1", "person", serde_json::json!({"name": "Diana", "age": 28, "role": "manager"})).unwrap();
+
+        // Test AND
+        let result = db.query_sql("tenant1", "SELECT * FROM person WHERE age > 30 AND role = 'engineer'").unwrap();
+        let rows = result.as_array().unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0]["name"], "Charlie");
+
+        // Test OR
+        let result = db.query_sql("tenant1", "SELECT * FROM person WHERE age < 26 OR role = 'manager'").unwrap();
+        let rows = result.as_array().unwrap();
+        assert_eq!(rows.len(), 2); // Bob and Diana
+    }
+
+    #[test]
+    fn test_query_sql_order_by() {
+        let db = Database::open_temp().unwrap();
+
+        let schema = serde_json::json!({
+            "title": "Person",
+            "version": "1.0.0",
+            "short_name": "person",
+            "properties": {
+                "name": {"type": "string"},
+                "age": {"type": "number"}
+            },
+            "required": ["name"]
+        });
+
+        db.register_schema("person", schema).unwrap();
+
+        db.insert("tenant1", "person", serde_json::json!({"name": "Alice", "age": 30})).unwrap();
+        db.insert("tenant1", "person", serde_json::json!({"name": "Bob", "age": 25})).unwrap();
+        db.insert("tenant1", "person", serde_json::json!({"name": "Charlie", "age": 35})).unwrap();
+
+        // Test ORDER BY ASC (default)
+        let result = db.query_sql("tenant1", "SELECT * FROM person ORDER BY age ASC").unwrap();
+        let rows = result.as_array().unwrap();
+        assert_eq!(rows[0]["name"], "Bob");
+        assert_eq!(rows[1]["name"], "Alice");
+        assert_eq!(rows[2]["name"], "Charlie");
+
+        // Test ORDER BY DESC
+        let result = db.query_sql("tenant1", "SELECT * FROM person ORDER BY age DESC").unwrap();
+        let rows = result.as_array().unwrap();
+        assert_eq!(rows[0]["name"], "Charlie");
+        assert_eq!(rows[1]["name"], "Alice");
+        assert_eq!(rows[2]["name"], "Bob");
+    }
+
+    #[test]
+    fn test_query_sql_limit() {
+        let db = Database::open_temp().unwrap();
+
+        let schema = serde_json::json!({
+            "title": "Person",
+            "version": "1.0.0",
+            "short_name": "person",
+            "properties": {
+                "name": {"type": "string"},
+                "age": {"type": "number"}
+            },
+            "required": ["name"]
+        });
+
+        db.register_schema("person", schema).unwrap();
+
+        db.insert("tenant1", "person", serde_json::json!({"name": "Alice", "age": 30})).unwrap();
+        db.insert("tenant1", "person", serde_json::json!({"name": "Bob", "age": 25})).unwrap();
+        db.insert("tenant1", "person", serde_json::json!({"name": "Charlie", "age": 35})).unwrap();
+        db.insert("tenant1", "person", serde_json::json!({"name": "Diana", "age": 28})).unwrap();
+
+        // Test LIMIT
+        let result = db.query_sql("tenant1", "SELECT * FROM person LIMIT 2").unwrap();
+        let rows = result.as_array().unwrap();
+        assert_eq!(rows.len(), 2);
+    }
+
+    #[test]
+    fn test_query_sql_count() {
+        let db = Database::open_temp().unwrap();
+
+        let schema = serde_json::json!({
+            "title": "Person",
+            "version": "1.0.0",
+            "short_name": "person",
+            "properties": {
+                "name": {"type": "string"},
+                "age": {"type": "number"}
+            },
+            "required": ["name"]
+        });
+
+        db.register_schema("person", schema).unwrap();
+
+        db.insert("tenant1", "person", serde_json::json!({"name": "Alice", "age": 30})).unwrap();
+        db.insert("tenant1", "person", serde_json::json!({"name": "Bob", "age": 25})).unwrap();
+        db.insert("tenant1", "person", serde_json::json!({"name": "Charlie", "age": 35})).unwrap();
+
+        // Test COUNT(*)
+        let result = db.query_sql("tenant1", "SELECT COUNT(*) FROM person").unwrap();
+        let rows = result.as_array().unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0]["count"], 3);
+    }
+
+    #[test]
+    fn test_query_sql_avg() {
+        let db = Database::open_temp().unwrap();
+
+        let schema = serde_json::json!({
+            "title": "Person",
+            "version": "1.0.0",
+            "short_name": "person",
+            "properties": {
+                "name": {"type": "string"},
+                "age": {"type": "number"}
+            },
+            "required": ["name"]
+        });
+
+        db.register_schema("person", schema).unwrap();
+
+        db.insert("tenant1", "person", serde_json::json!({"name": "Alice", "age": 30})).unwrap();
+        db.insert("tenant1", "person", serde_json::json!({"name": "Bob", "age": 20})).unwrap();
+        db.insert("tenant1", "person", serde_json::json!({"name": "Charlie", "age": 40})).unwrap();
+
+        // Test AVG
+        let result = db.query_sql("tenant1", "SELECT AVG(age) FROM person").unwrap();
+        let rows = result.as_array().unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0]["avg"], 30.0);
+    }
+
+    #[test]
+    fn test_query_sql_min_max() {
+        let db = Database::open_temp().unwrap();
+
+        let schema = serde_json::json!({
+            "title": "Person",
+            "version": "1.0.0",
+            "short_name": "person",
+            "properties": {
+                "name": {"type": "string"},
+                "age": {"type": "number"}
+            },
+            "required": ["name"]
+        });
+
+        db.register_schema("person", schema).unwrap();
+
+        db.insert("tenant1", "person", serde_json::json!({"name": "Alice", "age": 30})).unwrap();
+        db.insert("tenant1", "person", serde_json::json!({"name": "Bob", "age": 25})).unwrap();
+        db.insert("tenant1", "person", serde_json::json!({"name": "Charlie", "age": 35})).unwrap();
+
+        // Test MIN and MAX
+        let result = db.query_sql("tenant1", "SELECT MIN(age), MAX(age) FROM person").unwrap();
+        let rows = result.as_array().unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0]["min"], 25.0);
+        assert_eq!(rows[0]["max"], 35.0);
+    }
+
+    #[test]
+    fn test_query_sql_sum() {
+        let db = Database::open_temp().unwrap();
+
+        let schema = serde_json::json!({
+            "title": "Person",
+            "version": "1.0.0",
+            "short_name": "person",
+            "properties": {
+                "name": {"type": "string"},
+                "age": {"type": "number"}
+            },
+            "required": ["name"]
+        });
+
+        db.register_schema("person", schema).unwrap();
+
+        db.insert("tenant1", "person", serde_json::json!({"name": "Alice", "age": 30})).unwrap();
+        db.insert("tenant1", "person", serde_json::json!({"name": "Bob", "age": 25})).unwrap();
+        db.insert("tenant1", "person", serde_json::json!({"name": "Charlie", "age": 35})).unwrap();
+
+        // Test SUM
+        let result = db.query_sql("tenant1", "SELECT SUM(age) FROM person").unwrap();
+        let rows = result.as_array().unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0]["sum"], 90.0);
+    }
+
+    #[test]
+    fn test_query_sql_aggregate_with_where() {
+        let db = Database::open_temp().unwrap();
+
+        let schema = serde_json::json!({
+            "title": "Person",
+            "version": "1.0.0",
+            "short_name": "person",
+            "properties": {
+                "name": {"type": "string"},
+                "age": {"type": "number"},
+                "role": {"type": "string"}
+            },
+            "required": ["name"]
+        });
+
+        db.register_schema("person", schema).unwrap();
+
+        db.insert("tenant1", "person", serde_json::json!({"name": "Alice", "age": 30, "role": "engineer"})).unwrap();
+        db.insert("tenant1", "person", serde_json::json!({"name": "Bob", "age": 25, "role": "designer"})).unwrap();
+        db.insert("tenant1", "person", serde_json::json!({"name": "Charlie", "age": 35, "role": "engineer"})).unwrap();
+
+        // Test aggregate with WHERE filter
+        let result = db.query_sql("tenant1", "SELECT COUNT(*), AVG(age) FROM person WHERE role = 'engineer'").unwrap();
+        let rows = result.as_array().unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0]["count"], 2);
+        assert_eq!(rows[0]["avg"], 32.5);
+    }
+
+    #[test]
+    fn test_query_sql_invalid_syntax() {
+        let db = Database::open_temp().unwrap();
+
+        let schema = serde_json::json!({
+            "title": "Person",
+            "version": "1.0.0",
+            "short_name": "person",
+            "properties": {"name": {"type": "string"}},
+            "required": ["name"]
+        });
+
+        db.register_schema("person", schema).unwrap();
+
+        // Invalid SQL should return error
+        let result = db.query_sql("tenant1", "INVALID SQL QUERY");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_query_sql_no_joins() {
+        let db = Database::open_temp().unwrap();
+
+        let schema = serde_json::json!({
+            "title": "Person",
+            "version": "1.0.0",
+            "short_name": "person",
+            "properties": {"name": {"type": "string"}},
+            "required": ["name"]
+        });
+
+        db.register_schema("person", schema).unwrap();
+
+        // JOIN should be rejected
+        let result = db.query_sql("tenant1", "SELECT * FROM person JOIN company ON person.company_id = company.id");
+        assert!(result.is_err());
+    }
 }
