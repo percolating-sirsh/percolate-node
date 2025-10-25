@@ -965,6 +965,60 @@ percolation/
   - Heavy embeddings (GPU)
   - OCR and transcription
 
+## Build and Release
+
+### Quick start
+
+```bash
+# Bump version
+python scripts/bump_version.py <project> --part patch|minor|major
+
+# Check status
+python scripts/pr.py status
+
+# Create release commit and tags
+python scripts/pr.py create --push
+```
+
+### Projects and releases
+
+The repository contains three independently versioned projects:
+
+1. **percolate-rocks**: PyPI package (Rust + PyO3)
+2. **percolate**: Docker image (Python API server)
+3. **percolate-reading**: Docker image (Python processing service)
+
+### Release workflow
+
+1. **Create RC** (release candidate):
+   ```bash
+   # Tag format: {project}-v{version}-rc{N}
+   git tag percolate-rocks-v0.2.0-rc1
+   git push --tags
+   ```
+
+2. **Test RC** builds from PyPI/GHCR
+
+3. **Promote to production**:
+   ```bash
+   # Tag format: {project}-v{version}
+   git tag percolate-rocks-v0.2.0
+   git push --tags
+   ```
+
+### CI/CD workflows
+
+Workflows in `.github/workflows/`:
+
+- `build-rocks.yml` - Build Python wheels for PyPI
+- `build-percolate.yml` - Build Docker images for GHCR
+- `build-reading.yml` - Build Docker images for GHCR
+- `release-rocks.yml` - Promote PyPI package, create GitHub release
+- `release-percolate.yml` - Retag Docker images, create GitHub release
+- `release-reading.yml` - Retag Docker images, create GitHub release
+
+All workflows documented in `.github/workflows/README.md`.
+
 ## Cloud Deployment
 
 Percolate supports **tiered multi-tenant deployment** with independent horizontal scaling:
