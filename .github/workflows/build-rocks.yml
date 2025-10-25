@@ -162,6 +162,11 @@ jobs:
           python3 -c "import rem_db; print('✓ Package import works')"
           python3 -c "from rem_db import Database; print('✓ Database class accessible')"
 
+      - name: Install protobuf compiler
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y protobuf-compiler
+
       - name: Install maturin
         run: pip install maturin
 
