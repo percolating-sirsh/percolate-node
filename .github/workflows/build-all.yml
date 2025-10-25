@@ -15,40 +15,52 @@ permissions:
   id-token: write  # Allow PyPI trusted publishing
 
 jobs:
-  # Step 1: Build Python package (rocks)
-  build-rocks:
-    name: Build percolate-rocks
+  # Step 1: Build & publish percolate-rocks to PyPI (if version changed)
+  build-publish-rocks:
+    name: Build & publish percolate-rocks
     uses: ./.github/workflows/build-rocks.yml
     secrets: inherit
     permissions:
       contents: read
       id-token: write
 
-  # Step 2: Build Docker images (depends on rocks)
-  build-services:
-    name: Build Docker images
-    needs: build-rocks
+  # Step 2a: Build percolate Docker image (if version changed, parallel with 2b)
+  build-percolate:
+    name: Build percolate
+    needs: build-publish-rocks
     if: always()
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
       - name: Build percolate
         run: echo "TODO - docker build percolate"
 
-      - name: Build percolate-reading
-        run: echo "TODO - docker build percolate-reading"
-
-  # Step 3: Summary
-  summary:
-    name: Build summary
-    needs: [build-rocks, build-services]
+  # Step 2b: Build percolate-reading Docker image (if version changed, parallel with 2a)
+  build-reading:
+    name: Build percolate-reading
+    needs: build-publish-rocks
     if: always()
     runs-on: ubuntu-latest
     steps:
-      - name: Report
+      - uses: actions/checkout@v4
+      - name: Build percolate-reading
+        run: echo "TODO - docker build percolate-reading"
+
+  # Step 3: Publish manifest (no-op for now)
+  publish-manifest:
+    name: Publish manifest
+    needs: [build-publish-rocks, build-percolate, build-reading]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Publish manifest
         run: |
-          echo "### Build Summary" >> $GITHUB_STEP_SUMMARY
+          echo "### Build Manifest" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "- percolate-rocks: ${{ needs.build-rocks.result }}" >> $GITHUB_STEP_SUMMARY
-          echo "- services: ${{ needs.build-services.result }}" >> $GITHUB_STEP_SUMMARY
+          echo "| Component | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|-----------|--------|" >> $GITHUB_STEP_SUMMARY
+          echo "| percolate-rocks | ${{ needs.build-publish-rocks.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| percolate | ${{ needs.build-percolate.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| percolate-reading | ${{ needs.build-reading.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "TODO: Publish release manifest" >> $GITHUB_STEP_SUMMARY
