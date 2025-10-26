@@ -5,6 +5,43 @@ use pyo3::types::{PyDict, PyList};
 use crate::database::Database as RustDatabase;
 use crate::types::{Result as RustResult, Entity};
 use std::sync::Arc;
+use std::path::PathBuf;
+
+/// Get default database path from environment or home directory.
+///
+/// Resolution order:
+/// 1. P8_DB_PATH environment variable
+/// 2. P8_HOME/db environment variable
+/// 3. ~/.p8/db (default)
+fn get_default_db_path() -> PathBuf {
+    if let Ok(db_path) = std::env::var("P8_DB_PATH") {
+        return PathBuf::from(shellexpand::tilde(&db_path).to_string());
+    }
+
+    if let Ok(p8_home) = std::env::var("P8_HOME") {
+        let mut path = PathBuf::from(shellexpand::tilde(&p8_home).to_string());
+        path.push("db");
+        return path;
+    }
+
+    // Default to ~/.p8/db
+    let home = std::env::var("HOME")
+        .unwrap_or_else(|_| "/tmp".to_string());
+    let mut path = PathBuf::from(home);
+    path.push(".p8");
+    path.push("db");
+    path
+}
+
+/// Get tenant ID from environment or default to single-user mode.
+///
+/// Resolution order:
+/// 1. P8_TENANT_ID environment variable
+/// 2. "default" (single-user mode)
+fn get_tenant_id() -> String {
+    std::env::var("P8_TENANT_ID")
+        .unwrap_or_else(|_| "default".to_string())
+}
 
 /// Python wrapper for Database.
 ///
@@ -17,18 +54,25 @@ pub struct PyDatabase {
 
 #[pymethods]
 impl PyDatabase {
-    /// Create new database.
+    /// Create new database using defaults.
     ///
-    /// # Arguments
+    /// Path resolution:
+    /// 1. P8_DB_PATH environment variable
+    /// 2. P8_HOME/db environment variable
+    /// 3. ~/.p8/db (default)
     ///
-    /// * `path` - Database directory path
-    /// * `tenant_id` - Tenant identifier
+    /// Tenant ID resolution:
+    /// 1. P8_TENANT_ID environment variable
+    /// 2. "default" (single-user mode)
     ///
     /// # Returns
     ///
     /// New `PyDatabase` instance
     #[new]
-    fn new(path: String, tenant_id: String) -> PyResult<Self> {
+    fn new() -> PyResult<Self> {
+        let path = get_default_db_path();
+        let tenant_id = get_tenant_id();
+
         let db = RustDatabase::open(&path)
             .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!("Failed to open database: {}", e)))?;
 
@@ -132,6 +176,7 @@ impl PyDatabase {
     ///
     /// # Arguments
     ///
+    /// * `table` - Table/schema name
     /// * `key_value` - Key field value
     ///
     /// # Returns
@@ -210,6 +255,7 @@ impl PyDatabase {
     ///
     /// * `question` - Natural language question
     /// * `execute` - Execute query or just plan
+    /// * `schema_hint` - Optional schema name hint
     ///
     /// # Returns
     ///
@@ -421,6 +467,75 @@ impl PyDatabase {
             let json_value = serde_json::Value::Object(data);
             let uuid = self.inner.insert(&self.tenant_id, &schema, json_value)
                 .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!("Failed to insert chunk: {}", e)))?;
+
+            uuids.push(uuid.to_string());
+        }
+
+        Ok(uuids)
+    }
+
+    /// Upsert collection of Pydantic models.
+    ///
+    /// Automatically detects schema name from model and inserts/updates entities.
+    ///
+    /// # Arguments
+    ///
+    /// * `models` - List of Pydantic model instances (dicts)
+    ///
+    /// # Returns
+    ///
+    /// List of entity UUIDs
+    ///
+    /// # Example
+    ///
+    /// ```python
+    /// from pydantic import BaseModel
+    ///
+    /// class Session(BaseModel):
+    ///     name: str
+    ///     user_id: str
+    ///
+    /// sessions = [Session(name="s1", user_id="u1"), Session(name="s2", user_id="u2")]
+    /// db.upsert(sessions)
+    /// ```
+    fn upsert(&self, models: &PyList) -> PyResult<Vec<String>> {
+        let mut uuids = Vec::new();
+
+        for item in models.iter() {
+            // Extract schema name from __class__.__name__ or use "entities" as default
+            let schema = if let Ok(class) = item.getattr("__class__") {
+                if let Ok(name) = class.getattr("__name__") {
+                    name.extract::<String>().unwrap_or_else(|_| "entities".to_string())
+                } else {
+                    "entities".to_string()
+                }
+            } else {
+                "entities".to_string()
+            };
+
+            // Convert to dict - try direct downcast first, then call model_dump() for Pydantic models
+            let model_dict = if let Ok(dict) = item.downcast::<PyDict>() {
+                // Already a dict
+                dict
+            } else {
+                // Try calling model_dump() to convert Pydantic model to dict
+                if let Ok(dump_method) = item.getattr("model_dump") {
+                    let dumped = dump_method.call0()?;
+                    dumped.downcast::<PyDict>()?
+                } else {
+                    return Err(PyErr::new::<pyo3::exceptions::PyTypeError, _>(
+                        format!("Item must be a Pydantic model or dict, got {}", schema)
+                    ));
+                }
+            };
+
+            // Convert to JSON value
+            let value: serde_json::Value = pythonize::depythonize(model_dict)
+                .map_err(|e| PyErr::new::<pyo3::exceptions::PyValueError, _>(format!("Failed to convert model: {}", e)))?;
+
+            // Insert (upsert is handled by deterministic UUID generation)
+            let uuid = self.inner.insert(&self.tenant_id, &schema, value)
+                .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!("Failed to upsert: {}", e)))?;
 
             uuids.push(uuid.to_string());
         }

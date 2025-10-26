@@ -17,4 +17,7 @@ pub use builtin::{
     schemas_table_schema,
     documents_table_schema,
     resources_table_schema,
+    sessions_table_schema,
+    messages_table_schema,
+    feedback_table_schema,
 };

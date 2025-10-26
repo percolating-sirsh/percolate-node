@@ -6,9 +6,17 @@ from rem_db.models import Article, Person
 
 
 @pytest.fixture
-def db(tmp_path):
+def db(tmp_path, monkeypatch):
     """Create database with schemas registered."""
-    db = Database(path=str(tmp_path), tenant_id="test")
+    # Set environment variables for test database
+    db_path = tmp_path / "test_db"
+    db_path.mkdir()
+
+    monkeypatch.setenv("P8_DB_PATH", str(db_path))
+    monkeypatch.setenv("P8_TENANT_ID", "test")
+
+    # Import after environment is set
+    db = Database()
     # TODO: Register schemas
     return db
 

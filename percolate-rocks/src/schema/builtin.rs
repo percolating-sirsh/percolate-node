@@ -61,6 +61,11 @@ pub fn register_builtin_schemas(registry: &mut SchemaRegistry) -> Result<()> {
     // Register resources table
     registry.register("resources", resources_table_schema())?;
 
+    // Register conversation tables
+    registry.register("sessions", sessions_table_schema())?;
+    registry.register("messages", messages_table_schema())?;
+    registry.register("feedback", feedback_table_schema())?;
+
     Ok(())
 }
 
@@ -388,6 +393,304 @@ pub fn resources_table_schema() -> serde_json::Value {
     })
 }
 
+/// Get sessions table schema definition.
+///
+/// # Returns
+///
+/// JSON Schema for `sessions` table
+///
+/// # Schema Fields
+///
+/// - `session_id` (string): Unique session identifier (key field)
+/// - `tenant_id` (string): Tenant scope for isolation
+/// - `agent_uri` (string?): Agent used in session
+/// - `message_count` (integer): Number of messages in session
+/// - `metadata` (object): Additional metadata
+/// - `created_at` (datetime): Session creation timestamp
+/// - `updated_at` (datetime): Last update timestamp
+///
+/// # json_schema_extra
+///
+/// - `embedding_fields`: [] - No embeddings
+/// - `indexed_fields`: ["tenant_id", "agent_uri", "updated_at"]
+/// - `key_field`: "session_id" - Deterministic UUID from session_id
+///
+/// # Note
+///
+/// Sessions are conversation metadata. Messages are stored separately.
+pub fn sessions_table_schema() -> serde_json::Value {
+    json!({
+        "title": "Session",
+        "description": "Conversation session metadata",
+        "version": "1.0.0",
+        "short_name": "sessions",
+        "name": "percolate.memory.Session",
+
+        "json_schema_extra": {
+            "embedding_fields": [],
+            "indexed_fields": ["tenant_id", "agent_uri", "updated_at"],
+            "key_field": "session_id",
+            "category": "system",
+            "fully_qualified_name": "percolate.memory.Session"
+        },
+
+        "type": "object",
+        "properties": {
+            "session_id": {
+                "type": "string",
+                "description": "Unique session identifier"
+            },
+            "tenant_id": {
+                "type": "string",
+                "description": "Tenant scope for isolation"
+            },
+            "agent_uri": {
+                "type": ["string", "null"],
+                "description": "Agent used in session",
+                "default": null
+            },
+            "message_count": {
+                "type": "integer",
+                "description": "Number of messages in session",
+                "default": 0
+            },
+            "metadata": {
+                "type": "object",
+                "description": "Additional metadata",
+                "default": {}
+            },
+            "created_at": {
+                "type": "string",
+                "format": "date-time",
+                "description": "Session creation timestamp"
+            },
+            "updated_at": {
+                "type": "string",
+                "format": "date-time",
+                "description": "Last update timestamp"
+            }
+        },
+
+        "required": ["session_id", "tenant_id", "created_at", "updated_at"]
+    })
+}
+
+/// Get messages table schema definition.
+///
+/// # Returns
+///
+/// JSON Schema for `messages` table
+///
+/// # Schema Fields
+///
+/// - `message_id` (string): Unique message identifier (UUID, key field)
+/// - `session_id` (string): Parent session identifier
+/// - `tenant_id` (string): Tenant scope for isolation
+/// - `role` (string): Message role (user, assistant, system)
+/// - `content` (string): Message content
+/// - `model` (string?): Model that generated response (for assistant messages)
+/// - `timestamp` (datetime): Message timestamp
+/// - `usage` (object?): Token usage metrics
+/// - `trace_id` (string?): OTEL trace ID (hex string, 32 chars)
+/// - `span_id` (string?): OTEL span ID (hex string, 16 chars)
+///
+/// # json_schema_extra
+///
+/// - `embedding_fields`: ["content"] - Embed content for semantic search
+/// - `indexed_fields`: ["session_id", "tenant_id", "role", "timestamp"]
+/// - `key_field`: "message_id" - Each message has unique UUID
+///
+/// # Note
+///
+/// Messages are individual conversation turns. Linked to sessions via session_id.
+/// trace_id/span_id enable feedback linking via OpenTelemetry.
+pub fn messages_table_schema() -> serde_json::Value {
+    json!({
+        "title": "Message",
+        "description": "Individual message in a conversation",
+        "version": "1.0.0",
+        "short_name": "messages",
+        "name": "percolate.memory.Message",
+
+        "json_schema_extra": {
+            "embedding_fields": ["content"],
+            "indexed_fields": ["session_id", "tenant_id", "role", "timestamp"],
+            "key_field": "message_id",
+            "category": "system",
+            "fully_qualified_name": "percolate.memory.Message"
+        },
+
+        "type": "object",
+        "properties": {
+            "message_id": {
+                "type": "string",
+                "description": "Unique message identifier (UUID)"
+            },
+            "session_id": {
+                "type": "string",
+                "description": "Parent session identifier"
+            },
+            "tenant_id": {
+                "type": "string",
+                "description": "Tenant scope for isolation"
+            },
+            "role": {
+                "type": "string",
+                "enum": ["user", "assistant", "system"],
+                "description": "Message role"
+            },
+            "content": {
+                "type": "string",
+                "description": "Message content"
+            },
+            "model": {
+                "type": ["string", "null"],
+                "description": "Model that generated response (for assistant messages)",
+                "default": null
+            },
+            "timestamp": {
+                "type": "string",
+                "format": "date-time",
+                "description": "Message timestamp"
+            },
+            "usage": {
+                "type": ["object", "null"],
+                "description": "Token usage metrics",
+                "default": null,
+                "properties": {
+                    "input_tokens": {"type": "integer"},
+                    "output_tokens": {"type": "integer"}
+                }
+            },
+            "trace_id": {
+                "type": ["string", "null"],
+                "description": "OTEL trace ID (hex string, 32 chars)",
+                "default": null
+            },
+            "span_id": {
+                "type": ["string", "null"],
+                "description": "OTEL span ID (hex string, 16 chars)",
+                "default": null
+            }
+        },
+
+        "required": ["message_id", "session_id", "tenant_id", "role", "content", "timestamp"]
+    })
+}
+
+/// Get feedback table schema definition.
+///
+/// # Returns
+///
+/// JSON Schema for `feedback` table
+///
+/// # Schema Fields
+///
+/// - `feedback_id` (string): Unique feedback identifier (UUID, key field)
+/// - `session_id` (string): Parent session identifier
+/// - `message_id` (string?): Specific message being rated (optional)
+/// - `tenant_id` (string): Tenant scope for isolation
+/// - `trace_id` (string?): OTEL trace ID for linking
+/// - `span_id` (string?): OTEL span ID for linking
+/// - `feedback_type` (string): Type of feedback (thumbs_up, thumbs_down, comment, rating)
+/// - `rating` (string?): Optional rating value (great, good, bad, terrible)
+/// - `feedback_text` (string?): Optional feedback comment
+/// - `user_id` (string?): User providing feedback
+/// - `timestamp` (datetime): Feedback timestamp
+/// - `metadata` (object): Additional metadata
+///
+/// # json_schema_extra
+///
+/// - `embedding_fields`: ["feedback_text"] - Embed comments for analysis
+/// - `indexed_fields`: ["session_id", "message_id", "trace_id", "feedback_type", "timestamp"]
+/// - `key_field`: "feedback_id" - Each feedback has unique UUID
+///
+/// # Note
+///
+/// Feedback can be linked to sessions, messages, or OTEL traces for analysis.
+pub fn feedback_table_schema() -> serde_json::Value {
+    json!({
+        "title": "Feedback",
+        "description": "User feedback on agent interactions",
+        "version": "1.0.0",
+        "short_name": "feedback",
+        "name": "percolate.memory.Feedback",
+
+        "json_schema_extra": {
+            "embedding_fields": ["feedback_text"],
+            "indexed_fields": ["session_id", "message_id", "trace_id", "label", "timestamp"],
+            "key_field": "feedback_id",
+            "category": "system",
+            "fully_qualified_name": "percolate.memory.Feedback"
+        },
+
+        "type": "object",
+        "properties": {
+            "feedback_id": {
+                "type": "string",
+                "description": "Unique feedback identifier (UUID)"
+            },
+            "session_id": {
+                "type": "string",
+                "description": "Parent session identifier"
+            },
+            "message_id": {
+                "type": ["string", "null"],
+                "description": "Specific message being rated (optional)",
+                "default": null
+            },
+            "tenant_id": {
+                "type": "string",
+                "description": "Tenant scope for isolation"
+            },
+            "trace_id": {
+                "type": ["string", "null"],
+                "description": "OTEL trace ID for linking",
+                "default": null
+            },
+            "span_id": {
+                "type": ["string", "null"],
+                "description": "OTEL span ID for linking",
+                "default": null
+            },
+            "label": {
+                "type": ["string", "null"],
+                "description": "Feedback label (any string, e.g., 'thumbs_up', 'helpful', 'inaccurate')",
+                "default": null
+            },
+            "score": {
+                "type": ["number", "null"],
+                "minimum": 0.0,
+                "maximum": 1.0,
+                "description": "Feedback score between 0 and 1 (0=negative, 1=positive)",
+                "default": null
+            },
+            "feedback_text": {
+                "type": ["string", "null"],
+                "description": "Optional feedback comment",
+                "default": null
+            },
+            "user_id": {
+                "type": ["string", "null"],
+                "description": "User providing feedback",
+                "default": null
+            },
+            "timestamp": {
+                "type": "string",
+                "format": "date-time",
+                "description": "Feedback timestamp"
+            },
+            "metadata": {
+                "type": "object",
+                "description": "Additional metadata",
+                "default": {}
+            }
+        },
+
+        "required": ["feedback_id", "session_id", "tenant_id", "timestamp"]
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -428,5 +731,29 @@ mod tests {
             schema["json_schema_extra"]["embedding_fields"][0],
             "content"
         );
+    }
+
+    #[test]
+    fn test_sessions_table_schema() {
+        let schema = sessions_table_schema();
+        assert_eq!(schema["short_name"], "sessions");
+        assert_eq!(schema["json_schema_extra"]["category"], "system");
+        assert_eq!(schema["json_schema_extra"]["key_field"], "session_id");
+    }
+
+    #[test]
+    fn test_messages_table_schema() {
+        let schema = messages_table_schema();
+        assert_eq!(schema["short_name"], "messages");
+        assert_eq!(schema["json_schema_extra"]["category"], "system");
+        assert_eq!(schema["json_schema_extra"]["key_field"], "message_id");
+    }
+
+    #[test]
+    fn test_feedback_table_schema() {
+        let schema = feedback_table_schema();
+        assert_eq!(schema["short_name"], "feedback");
+        assert_eq!(schema["json_schema_extra"]["category"], "system");
+        assert_eq!(schema["json_schema_extra"]["key_field"], "feedback_id");
     }
 }
