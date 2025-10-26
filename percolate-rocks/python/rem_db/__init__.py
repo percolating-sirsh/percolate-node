@@ -51,7 +51,7 @@ from rem_db.models import (
     SchemaCategory,
 )
 
-__version__ = "0.3.1"
+__version__ = "0.3.2"
 
 __all__ = [
     "Database",
