@@ -7,10 +7,94 @@ All heavy operations are delegated to Rust for performance.
 # Expose Rust bindings directly for now
 from rem_db._rust import Database
 
-__version__ = "0.2.3"
+# Expose Pydantic models
+from rem_db.models import (
+    # Core entity models
+    Entity,
+    Edge,
+    SystemFields,
+    # REM pattern models
+    Resource,
+    Article,
+    Person,
+    Sprint,
+    # Chat session models
+    ChatSession,
+    ChatMessage,
+    ChatFeedback,
+    # Agent models
+    AgentletSchema,
+    MCPToolConfig,
+    MCPResourceConfig,
+    # Query models
+    QueryPlan,
+    SearchResult,
+    # Schema models
+    SchemaInfo,
+    # Job models
+    Job,
+    Session,
+    # Export models
+    ExportConfig,
+    # Replication models
+    ReplicationStatus,
+    WalEntry,
+    WalStatus,
+    # Enums
+    EntityType,
+    EmbeddingProvider,
+    SessionStatus,
+    JobType,
+    JobStatus,
+    ExportFormat,
+    ReplicationMode,
+    SchemaCategory,
+)
+
+__version__ = "0.3.0"
 
 __all__ = [
     "Database",
+    # Core entity models
+    "Entity",
+    "Edge",
+    "SystemFields",
+    # REM pattern models
+    "Resource",
+    "Article",
+    "Person",
+    "Sprint",
+    # Chat session models
+    "ChatSession",
+    "ChatMessage",
+    "ChatFeedback",
+    # Agent models
+    "AgentletSchema",
+    "MCPToolConfig",
+    "MCPResourceConfig",
+    # Query models
+    "QueryPlan",
+    "SearchResult",
+    # Schema models
+    "SchemaInfo",
+    # Job models
+    "Job",
+    "Session",
+    # Export models
+    "ExportConfig",
+    # Replication models
+    "ReplicationStatus",
+    "WalEntry",
+    "WalStatus",
+    # Enums
+    "EntityType",
+    "EmbeddingProvider",
+    "SessionStatus",
+    "JobType",
+    "JobStatus",
+    "ExportFormat",
+    "ReplicationMode",
+    "SchemaCategory",
 ]
 
 # Legacy wrapper class - keeping for future expansion
