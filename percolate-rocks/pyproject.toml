@@ -1,6 +1,6 @@
 [project]
 name = "percolate-rocks"
-version = "0.2.4"
+version = "0.3.0"
 description = "High-performance embedded database for semantic search, graph queries, and structured data"
 authors = [{ name = "Percolate Team" }]
 requires-python = ">=3.8"
