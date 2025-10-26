@@ -420,18 +420,18 @@ pub fn resources_table_schema() -> serde_json::Value {
 /// Sessions are conversation metadata. Messages are stored separately.
 pub fn sessions_table_schema() -> serde_json::Value {
     json!({
-        "title": "Session",
+        "title": "ChatSession",
         "description": "Conversation session metadata",
         "version": "1.0.0",
         "short_name": "sessions",
-        "name": "percolate.memory.Session",
+        "name": "percolate.memory.ChatSession",
 
         "json_schema_extra": {
             "embedding_fields": [],
             "indexed_fields": ["tenant_id", "agent_uri", "updated_at"],
             "key_field": "session_id",
             "category": "system",
-            "fully_qualified_name": "percolate.memory.Session"
+            "fully_qualified_name": "percolate.memory.ChatSession"
         },
 
         "type": "object",
@@ -506,18 +506,18 @@ pub fn sessions_table_schema() -> serde_json::Value {
 /// trace_id/span_id enable feedback linking via OpenTelemetry.
 pub fn messages_table_schema() -> serde_json::Value {
     json!({
-        "title": "Message",
+        "title": "ChatMessage",
         "description": "Individual message in a conversation",
         "version": "1.0.0",
         "short_name": "messages",
-        "name": "percolate.memory.Message",
+        "name": "percolate.memory.ChatMessage",
 
         "json_schema_extra": {
             "embedding_fields": ["content"],
             "indexed_fields": ["session_id", "tenant_id", "role", "timestamp"],
             "key_field": "message_id",
             "category": "system",
-            "fully_qualified_name": "percolate.memory.Message"
+            "fully_qualified_name": "percolate.memory.ChatMessage"
         },
 
         "type": "object",
@@ -610,18 +610,18 @@ pub fn messages_table_schema() -> serde_json::Value {
 /// Feedback can be linked to sessions, messages, or OTEL traces for analysis.
 pub fn feedback_table_schema() -> serde_json::Value {
     json!({
-        "title": "Feedback",
+        "title": "ChatFeedback",
         "description": "User feedback on agent interactions",
         "version": "1.0.0",
         "short_name": "feedback",
-        "name": "percolate.memory.Feedback",
+        "name": "percolate.memory.ChatFeedback",
 
         "json_schema_extra": {
             "embedding_fields": ["feedback_text"],
             "indexed_fields": ["session_id", "message_id", "trace_id", "label", "timestamp"],
             "key_field": "feedback_id",
             "category": "system",
-            "fully_qualified_name": "percolate.memory.Feedback"
+            "fully_qualified_name": "percolate.memory.ChatFeedback"
         },
 
         "type": "object",
@@ -737,6 +737,8 @@ mod tests {
     fn test_sessions_table_schema() {
         let schema = sessions_table_schema();
         assert_eq!(schema["short_name"], "sessions");
+        assert_eq!(schema["title"], "ChatSession");
+        assert_eq!(schema["name"], "percolate.memory.ChatSession");
         assert_eq!(schema["json_schema_extra"]["category"], "system");
         assert_eq!(schema["json_schema_extra"]["key_field"], "session_id");
     }
@@ -745,6 +747,8 @@ mod tests {
     fn test_messages_table_schema() {
         let schema = messages_table_schema();
         assert_eq!(schema["short_name"], "messages");
+        assert_eq!(schema["title"], "ChatMessage");
+        assert_eq!(schema["name"], "percolate.memory.ChatMessage");
         assert_eq!(schema["json_schema_extra"]["category"], "system");
         assert_eq!(schema["json_schema_extra"]["key_field"], "message_id");
     }
@@ -753,6 +757,8 @@ mod tests {
     fn test_feedback_table_schema() {
         let schema = feedback_table_schema();
         assert_eq!(schema["short_name"], "feedback");
+        assert_eq!(schema["title"], "ChatFeedback");
+        assert_eq!(schema["name"], "percolate.memory.ChatFeedback");
         assert_eq!(schema["json_schema_extra"]["category"], "system");
         assert_eq!(schema["json_schema_extra"]["key_field"], "feedback_id");
     }

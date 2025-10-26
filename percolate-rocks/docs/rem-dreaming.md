@@ -824,38 +824,3 @@ rem dream register-type "exercise" --description "Physical activity sessions"
 
 6. **Ontology emergence** - Knowledge graphs usually require manual curation. REM's graph edges emerge from usage patterns.
 
-**Prior art comparison:**
-
-| System | Semantic search | Graph | Temporal | Background LLM | Novel |
-|--------|----------------|-------|----------|---------------|-------|
-| Elasticsearch | ✅ BM25 | ❌ | ❌ | ❌ | No |
-| Neo4j | ❌ | ✅ | ❌ | ❌ | No |
-| Pinecone | ✅ Vector | ❌ | ❌ | ❌ | No |
-| Mem0 | ✅ Vector | ✅ | ❌ | ⚠️ Query-time | Partial |
-| **REM Dreaming** | ✅ Hybrid | ✅ | ✅ | ✅ Background | **Yes** |
-
-**REM Dreaming is the first database that uses LLMs as a background intelligence layer to create temporal narratives and emergent ontologies.**
-
----
-
-## References
-
-### Inspiration
-
-- **REM sleep** - Brain consolidates memories during REM (Rapid Eye Movement) sleep
-- **Mem0** - Memory layer for AI (query-time, not background)
-- **Rewind.ai** - Records everything you do (privacy-invasive, not semantic)
-- **Personal knowledge graphs** - Obsidian, Roam (manual, not automatic)
-
-### Technical foundations
-
-- **Vector databases** - Semantic search (Pinecone, Qdrant, Weaviate)
-- **Graph databases** - Relationship modeling (Neo4j, Dgraph)
-- **Temporal databases** - Time-series analysis (TimescaleDB, InfluxDB)
-- **LLM structured output** - GPT-4 with JSON schema, Claude with tool use
-
-### Papers
-
-- "Building a Second Brain" - Tiago Forte (concept of personal knowledge management)
-- "The Extended Mind" - Annie Murphy Paul (cognitive offloading to external systems)
-- "Memory Consolidation in Sleep" - Rasch & Born (neuroscience inspiration)

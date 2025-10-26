@@ -396,6 +396,121 @@ class Session(BaseModel):
 
 
 # ====================================================================
+# CHAT SESSION MODELS (for percolate chat API)
+# ====================================================================
+
+
+class ChatSession(BaseModel):
+    """Conversation session metadata for chat completions.
+
+    Schema defined in percolate-rocks/src/schema/builtin.rs (sessions_table_schema).
+    """
+
+    model_config = ConfigDict(
+        validate_assignment=True,
+        json_schema_extra={
+            "embedding_fields": [],
+            "indexed_fields": ["tenant_id", "agent_uri", "updated_at"],
+            "key_field": "session_id",
+            "category": "system",
+            "fully_qualified_name": "percolate.memory.ChatSession",
+            "short_name": "sessions",
+            "version": "1.0.0",
+        },
+    )
+
+    session_id: str = Field(description="Unique session identifier")
+    tenant_id: str = Field(description="Tenant scope for isolation")
+    agent_uri: Optional[str] = Field(default=None, description="Agent used in session")
+    message_count: int = Field(default=0, description="Number of messages")
+    metadata: dict[str, Any] = Field(
+        default_factory=dict, description="Additional metadata"
+    )
+    created_at: datetime = Field(description="Session creation timestamp")
+    updated_at: datetime = Field(description="Last update timestamp")
+
+
+class ChatMessage(BaseModel):
+    """Individual message in a chat conversation.
+
+    Schema defined in percolate-rocks/src/schema/builtin.rs (messages_table_schema).
+    """
+
+    model_config = ConfigDict(
+        validate_assignment=True,
+        json_schema_extra={
+            "embedding_fields": ["content"],
+            "indexed_fields": ["session_id", "tenant_id", "role", "timestamp"],
+            "key_field": "message_id",
+            "category": "system",
+            "fully_qualified_name": "percolate.memory.ChatMessage",
+            "short_name": "messages",
+            "version": "1.0.0",
+        },
+    )
+
+    message_id: str = Field(description="Unique message identifier (UUID)")
+    session_id: str = Field(description="Parent session identifier")
+    tenant_id: str = Field(description="Tenant scope for isolation")
+    role: str = Field(description="Message role: user, assistant, or system")
+    content: str = Field(description="Message content")
+    model: Optional[str] = Field(default=None, description="Model that generated response")
+    timestamp: datetime = Field(description="Message timestamp")
+    usage: Optional[dict[str, int]] = Field(
+        default=None, description="Token usage metrics"
+    )
+    trace_id: Optional[str] = Field(default=None, description="OTEL trace ID (hex, 32 chars)")
+    span_id: Optional[str] = Field(default=None, description="OTEL span ID (hex, 16 chars)")
+
+
+class ChatFeedback(BaseModel):
+    """User feedback on chat interactions.
+
+    Schema defined in percolate-rocks/src/schema/builtin.rs (feedback_table_schema).
+    """
+
+    model_config = ConfigDict(
+        validate_assignment=True,
+        json_schema_extra={
+            "embedding_fields": ["feedback_text"],
+            "indexed_fields": ["session_id", "message_id", "trace_id", "label", "timestamp"],
+            "key_field": "feedback_id",
+            "category": "system",
+            "fully_qualified_name": "percolate.memory.ChatFeedback",
+            "short_name": "feedback",
+            "version": "1.0.0",
+        },
+    )
+
+    feedback_id: str = Field(description="Unique feedback identifier (UUID)")
+    session_id: str = Field(description="Parent session identifier")
+    message_id: Optional[str] = Field(
+        default=None, description="Specific message being rated"
+    )
+    tenant_id: str = Field(description="Tenant scope for isolation")
+    trace_id: Optional[str] = Field(default=None, description="OTEL trace ID for linking")
+    span_id: Optional[str] = Field(default=None, description="OTEL span ID for linking")
+    label: Optional[str] = Field(
+        default=None,
+        description="Feedback label (any string, e.g., 'thumbs_up', 'helpful')",
+    )
+    score: Optional[float] = Field(
+        default=None,
+        ge=0.0,
+        le=1.0,
+        description="Feedback score between 0 and 1 (0=negative, 1=positive)",
+    )
+    feedback_text: Optional[str] = Field(
+        default=None, description="Optional feedback comment"
+    )
+    user_id: Optional[str] = Field(default=None, description="User providing feedback")
+    timestamp: datetime = Field(description="Feedback timestamp")
+    metadata: dict[str, Any] = Field(
+        default_factory=dict, description="Additional metadata"
+    )
+
+
+# ====================================================================
 # JOB MODELS (for async operations)
 # ====================================================================
 
