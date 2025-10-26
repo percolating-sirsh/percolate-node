@@ -190,8 +190,11 @@ jobs:
           mkdir -p target/wheels
           find ../wheels/ -name "*.whl" -exec cp {} target/wheels/ \;
 
-          # Publish with skip-existing in case of retries
-          maturin publish --skip-existing
+          echo "📦 Wheels to upload:"
+          ls -lh target/wheels/
+
+          # Upload pre-built wheels (use upload, not publish which rebuilds)
+          maturin upload --skip-existing target/wheels/*.whl
 
           echo "✅ Published to PyPI"
           echo "🔗 https://pypi.org/project/percolate-rocks/${VERSION}/"
