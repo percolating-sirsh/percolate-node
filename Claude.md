@@ -712,8 +712,6 @@ Refactor agent factory to support custom tools
 
 ## References
 
-- **Carrier**: Agent-let framework patterns
-- **P8FS-Modules**: Authentication and memory research
 - **Pydantic AI**: https://ai.pydantic.dev
 - **FastMCP**: https://github.com/jlowin/fastmcp
 - **OAuth 2.1**: https://oauth.net/2.1/

@@ -16,6 +16,9 @@ import pytest
 BASE_URL = "http://127.0.0.1:8765"
 TIMEOUT = 30.0
 
+# Skip all tests in this module if server is not running
+pytestmark = pytest.mark.skip(reason="Requires running server at http://127.0.0.1:8765. Run: uv run percolate serve --port 8765")
+
 
 @pytest.fixture
 def mcp_client():

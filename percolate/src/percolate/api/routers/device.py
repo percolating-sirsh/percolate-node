@@ -100,7 +100,7 @@ async def register_device(request: DeviceRegistrationRequest) -> DeviceRegistrat
         metadata["device_type"] = request.device_type
 
     # Determine mode
-    server_generated = settings.auth.p8fs_server_stored_keys and not request.public_key
+    server_generated = settings.auth.device_server_stored_keys and not request.public_key
 
     if server_generated:
         # Server-generated mode

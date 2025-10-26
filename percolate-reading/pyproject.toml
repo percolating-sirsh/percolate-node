@@ -28,7 +28,7 @@ dependencies = [
     "pydantic-settings>=2.6.0",
 
     # Database (for job management)
-    # "percolate-rocks>=0.1.0",  # REM database with RocksDB (TODO: add when published)
+    "percolate-rocks>=0.3.0",  # REM database with RocksDB
 
     # Document parsing
     "kreuzberg>=0.1.0",  # Fast PDF/DOCX parsing (primary)

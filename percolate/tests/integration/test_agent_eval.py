@@ -1,7 +1,7 @@
 """Integration test for agent evaluation."""
 
 import pytest
-from percolate.mcp.tools.agent import ask_agent
+from percolate.mcplib.tools.agent import ask_agent
 
 
 @pytest.mark.asyncio
@@ -79,13 +79,13 @@ async def test_ask_agent_with_pydantic_model():
     # Run agent
     result = await agent.run("Explain what Percolate is in one sentence.")
 
-    # Verify result
-    assert result.data is not None
-    assert isinstance(result.data, TestAgent)
-    assert result.data.answer
-    assert 0.0 <= result.data.confidence <= 1.0
+    # Verify result (Pydantic AI 1.x uses .output not .data)
+    assert result.output is not None
+    assert isinstance(result.output, TestAgent)
+    assert result.output.answer
+    assert 0.0 <= result.output.confidence <= 1.0
 
-    # Verify usage
+    # Verify usage (Pydantic AI 1.x uses .usage() method)
     usage = result.usage()
-    assert usage.request_tokens > 0
-    assert usage.response_tokens > 0
+    assert usage.input_tokens > 0
+    assert usage.output_tokens > 0

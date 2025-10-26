@@ -74,7 +74,7 @@ def agent_eval(
         percolate agent-eval test-agent "What is 2+2?"
         percolate agent-eval test-agent "Explain percolate" --json
     """
-    from percolate.mcp.tools.agent import ask_agent
+    from percolate.mcplib.tools.agent import ask_agent
 
     async def run():
         result = await ask_agent(

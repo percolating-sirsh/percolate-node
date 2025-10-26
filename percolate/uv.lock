@@ -2717,6 +2717,7 @@ dependencies = [
     { name = "fastmcp" },
     { name = "httpx" },
     { name = "loguru" },
+    { name = "mcp" },
     { name = "openinference-instrumentation-pydantic-ai" },
     { name = "opentelemetry-api" },
     { name = "opentelemetry-exporter-otlp" },
@@ -2724,6 +2725,7 @@ dependencies = [
     { name = "opentelemetry-instrumentation-fastapi" },
     { name = "opentelemetry-instrumentation-logging" },
     { name = "opentelemetry-sdk" },
+    { name = "percolate-rocks" },
     { name = "pydantic" },
     { name = "pydantic-ai" },
     { name = "pydantic-settings" },
@@ -2760,6 +2762,7 @@ requires-dist = [
     { name = "httpx", specifier = ">=0.28.1" },
     { name = "ipython", marker = "extra == 'dev'", specifier = ">=8.31.0" },
     { name = "loguru", specifier = ">=0.7.3" },
+    { name = "mcp", specifier = ">=1.16.0" },
     { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.14.0" },
     { name = "openinference-instrumentation-pydantic-ai", specifier = ">=0.1.9" },
     { name = "opentelemetry-api", specifier = ">=1.29.0" },
@@ -2768,6 +2771,7 @@ requires-dist = [
     { name = "opentelemetry-instrumentation-fastapi", specifier = ">=0.50b0" },
     { name = "opentelemetry-instrumentation-logging", specifier = ">=0.50b0" },
     { name = "opentelemetry-sdk", specifier = ">=1.29.0" },
+    { name = "percolate-rocks", specifier = ">=0.3.2" },
     { name = "pydantic", specifier = ">=2.10.5" },
     { name = "pydantic-ai", specifier = ">=0.8.1" },
     { name = "pydantic-settings", specifier = ">=2.7.1" },
@@ -2786,6 +2790,19 @@ requires-dist = [
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.34.0" },
 ]
 provides-extras = ["dev"]
+
+[[package]]
+name = "percolate-rocks"
+version = "0.3.2"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "pydantic" },
+    { name = "rich" },
+    { name = "typer" },
+]
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/3d/b4/193dac10c6d90665c97cc14445223c674cafa79aff65416e1ab584342f44/percolate_rocks-0.3.2-cp38-abi3-macosx_11_0_arm64.whl", hash = "sha256:88da89da34ea2e2157171729f83a8a6a6edcc2871fc353d15ec2915bd7f3090e", size = 10196843 },
+]
 
 [[package]]
 name = "pexpect"

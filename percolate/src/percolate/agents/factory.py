@@ -198,7 +198,7 @@ async def _build_mcp_tools(tool_configs: list[dict[str, str]]) -> list:
 
     Example tool_config:
         {"mcp_server": "percolate", "tool_name": "search_memory", "usage": "..."}
-        -> Creates Tool from percolate.mcp.tools.search_memory
+        -> Creates Tool from percolate.mcplib.tools.search_memory
     """
     logger.debug(f"Building {len(tool_configs)} MCP tools")
 
@@ -241,25 +241,25 @@ def _build_local_tools(tool_configs: list[dict[str, str]]) -> list:
 
     # Try to import common MCP tools
     try:
-        from percolate.mcp.tools import search_knowledge_base
+        from percolate.mcplib.tools import search_knowledge_base
         mcp_tools["search_knowledge_base"] = search_knowledge_base
     except ImportError:
         logger.debug("search_knowledge_base tool not available")
 
     try:
-        from percolate.mcp.tools import parse_document
+        from percolate.mcplib.tools import parse_document
         mcp_tools["parse_document"] = parse_document
     except ImportError:
         logger.debug("parse_document tool not available")
 
     try:
-        from percolate.mcp.tools import ask_agent
+        from percolate.mcplib.tools import ask_agent
         mcp_tools["ask_agent"] = ask_agent
     except ImportError:
         logger.debug("ask_agent tool not available")
 
     try:
-        from percolate.mcp.tools import create_agent
+        from percolate.mcplib.tools import create_agent
         mcp_tools["create_agent"] = create_agent
     except ImportError:
         logger.debug("create_agent tool not available")

@@ -1980,6 +1980,7 @@ dependencies = [
     { name = "opentelemetry-instrumentation-fastapi" },
     { name = "opentelemetry-sdk" },
     { name = "pdfplumber" },
+    { name = "percolate-rocks" },
     { name = "pillow" },
     { name = "pydantic" },
     { name = "pydantic-settings" },
@@ -2026,6 +2027,7 @@ requires-dist = [
     { name = "opentelemetry-instrumentation-fastapi", specifier = ">=0.50b0" },
     { name = "opentelemetry-sdk", specifier = ">=1.29.0" },
     { name = "pdfplumber", specifier = ">=0.11.0" },
+    { name = "percolate-rocks", specifier = ">=0.2.4" },
     { name = "pillow", specifier = ">=11.0.0" },
     { name = "pydantic", specifier = ">=2.10.0" },
     { name = "pydantic-settings", specifier = ">=2.6.0" },
@@ -2047,6 +2049,20 @@ requires-dist = [
     { name = "websockets", specifier = ">=13.0" },
 ]
 provides-extras = ["dev", "gpu"]
+
+[[package]]
+name = "percolate-rocks"
+version = "0.2.4"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "pydantic" },
+    { name = "rich" },
+    { name = "typer" },
+]
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/41/27/8beb4f356f868da5963262526ff2f93fff5481eefadaeacc4c0e75cbd42d/percolate_rocks-0.2.4-cp38-abi3-macosx_11_0_arm64.whl", hash = "sha256:9107ef678748d8ecc80db6720a2f63670e1773b3c7d42f5f78d8995e606bf717", size = 10093195 },
+    { url = "https://files.pythonhosted.org/packages/8e/8c/a6284822726d6075c7c6bc95b5e2033473b7728ace79b15b39f6fd0d9326/percolate_rocks-0.2.4-cp38-abi3-manylinux_2_39_x86_64.whl", hash = "sha256:f5f952143207ec3183b8a63d035353da209d8bc52dcec8dfd335b20f5dcce62c", size = 14256522 },
+]
 
 [[package]]
 name = "pillow"

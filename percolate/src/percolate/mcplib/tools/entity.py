@@ -1,6 +1,9 @@
 """Entity lookup MCP tool."""
 
 from typing import Any
+from loguru import logger
+
+from percolate.memory import get_database
 
 
 async def lookup_entity(
@@ -32,5 +35,22 @@ async def lookup_entity(
         >>> entity["properties"]["name"]
         'Alice'
     """
-    # TODO: Implement entity lookup via REM memory engine
-    raise NotImplementedError("Entity lookup not yet implemented")
+    db = get_database()
+
+    if not db:
+        raise RuntimeError("REM database unavailable (percolate-rocks not installed or not working)")
+
+    try:
+        # Note: rem get is not implemented in v0.2.0
+        # When ready: entity = db.get(entity_id)
+        logger.debug(f"Entity lookup not yet implemented - entity_id: {entity_id}")
+
+        raise NotImplementedError(
+            "Entity lookup not yet implemented in percolate-rocks v0.2.0 (rem get is TODO)"
+        )
+
+    except NotImplementedError:
+        raise
+    except Exception as e:
+        logger.error(f"Entity lookup failed: {e}")
+        raise RuntimeError(f"Failed to lookup entity {entity_id}: {e}")

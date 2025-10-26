@@ -21,7 +21,7 @@ class AuthStatus(BaseModel):
     """Authentication status response."""
 
     enabled: bool = Field(description="Whether authentication is enabled")
-    provider: str | None = Field(description="Provider name (p8fs, oidc, disabled)")
+    provider: str | None = Field(description="Provider name (device, oidc, disabled)")
     authenticated: bool = Field(description="Whether request is authenticated")
     user_id: str | None = Field(default=None, description="Current user ID if authenticated")
 

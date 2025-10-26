@@ -2,11 +2,11 @@
 
 from fastmcp import FastMCP
 
-from percolate.mcp.resources import register_agentlet_resources
-from percolate.mcp.tools.search import search_knowledge_base
-from percolate.mcp.tools.entity import lookup_entity
-from percolate.mcp.tools.parse import parse_document
-from percolate.mcp.tools.agent import create_agent, ask_agent
+from percolate.mcplib.resources import register_agentlet_resources
+from percolate.mcplib.tools.search import search_knowledge_base
+from percolate.mcplib.tools.entity import lookup_entity
+from percolate.mcplib.tools.parse import parse_document
+from percolate.mcplib.tools.agent import create_agent, ask_agent
 
 
 def create_mcp_server() -> FastMCP:

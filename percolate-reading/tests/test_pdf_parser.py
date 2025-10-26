@@ -17,8 +17,7 @@ from percolate_reading.storage.manager import StorageManager
 def storage_manager(tmp_path):
     """Create storage manager with temp directory."""
     return StorageManager(
-        base_path=tmp_path / "parse-jobs",
-        default_strategy=StorageStrategy.DATED,
+        base_dir=tmp_path / "parse-jobs"
     )
 
 

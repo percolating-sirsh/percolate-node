@@ -18,11 +18,11 @@ Testing the Server
 Health check:
     curl http://localhost:8000/health
 
-Agent evaluation via API:
-    curl -X POST http://localhost:8000/v1/agents/eval \
+Chat completions via API (OpenAI-compatible):
+    curl -X POST http://localhost:8000/v1/chat/completions \
       -H "Content-Type: application/json" \
       -H "X-Tenant-Id: tenant-123" \
-      -d '{"agent_uri": "percolate-test-agent", "prompt": "What is 2+2?"}'
+      -d '{"model": "percolate-test-agent", "messages": [{"role": "user", "content": "What is 2+2?"}]}'
 
 MCP client connection:
     # Use SSE transport
@@ -33,7 +33,7 @@ Endpoints
 - /                         : API information
 - /health                   : Health check with version
 - /version                  : Detailed version information
-- /v1/agents/eval           : Evaluate agent-let with prompt
+- /v1/chat/completions      : OpenAI-compatible chat completions (agent-lets)
 - /mcp                      : MCP endpoint (SSE transport)
 - /docs                     : OpenAPI documentation
 """
@@ -43,12 +43,12 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from loguru import logger
 
-from percolate.api.routers.agents import router as agents_router
+from percolate.api.routers.chat import router as chat_router
 from percolate.api.routers.device import router as device_router
 from percolate.api.routers.health import router as health_router
 from percolate.api.routers.oauth import router as oauth_router
 from percolate.api.routers.oauth_dev import router as oauth_dev_router
-from percolate.mcp.server import create_mcp_server
+from percolate.mcplib.server import create_mcp_server
 from percolate.settings import settings
 from percolate.version import __version__
 
@@ -105,12 +105,12 @@ def create_app() -> FastAPI:
             "auth_enabled": settings.auth.enabled,
         }
 
-    # Register routers (order matters - health/oauth/device are public, agents may require auth)
+    # Register routers (order matters - health/oauth/device are public, chat may require auth)
     app.include_router(health_router)     # /health, /status - public
     app.include_router(oauth_router)      # /oauth/* - public
     app.include_router(oauth_dev_router)  # /oauth/dev/* - dev provider (public)
     app.include_router(device_router)     # /device/* - device registration (public)
-    app.include_router(agents_router)     # /v1/agents/* - may require auth
+    app.include_router(chat_router)       # /v1/chat/* - completions and feedback
 
     # Mount MCP server at root (creates /mcp endpoint)
     app.mount("/", mcp_app)

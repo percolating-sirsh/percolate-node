@@ -74,9 +74,9 @@ def test_percolate_modules_exist():
     from percolate.agents.registry import load_agentlet_schema
 
     # MCP modules
-    from percolate.mcp import server, resources
-    from percolate.mcp.server import create_mcp_server
-    from percolate.mcp.tools import search, entity, parse, agent
+    from percolate.mcplib import server, resources
+    from percolate.mcplib.server import create_mcp_server
+    from percolate.mcplib.tools import search, entity, parse, agent
 
     # Auth modules
     from percolate.auth import models, device, jwt_manager, middleware, oauth

@@ -6,7 +6,7 @@ These tests verify MCP tool logic without requiring a running server.
 import pytest
 from unittest.mock import Mock, AsyncMock, patch
 
-from percolate.mcp.tools.agent import ask_agent
+from percolate.mcplib.tools.agent import ask_agent
 from percolate.agents.context import AgentContext
 
 
@@ -15,18 +15,23 @@ async def test_ask_agent_tool_basic():
     """Test ask_agent tool with basic arguments."""
     # Mock the agent factory and execution
     mock_agent = Mock()
-    mock_agent.run = AsyncMock(
-        return_value=Mock(
-            data={
-                "answer": "Test response",
-                "confidence": 0.95,
-                "tags": ["test"],
-            }
-        )
-    )
+    mock_result = Mock()
+    mock_result.output = {
+        "answer": "Test response",
+        "confidence": 0.95,
+        "tags": ["test"],
+    }
+    mock_result.usage = Mock(return_value=Mock(input_tokens=100, output_tokens=50))
+    mock_result.all_messages = Mock(return_value=[Mock(model_name="test-model")])
+    mock_agent.run = AsyncMock(return_value=mock_result)
 
-    with patch("percolate.mcp.tools.agent.create_agent", return_value=mock_agent):
+    # Mock schema loading
+    mock_schema = {"title": "TestAgent", "properties": {}}
+
+    with patch("percolate.mcplib.tools.agent.create_pydantic_agent", return_value=mock_agent), \
+         patch("percolate.mcplib.tools.agent.load_agentlet_schema", return_value=mock_schema):
         result = await ask_agent(
+            ctx=None,
             agent_uri="test-agent",
             tenant_id="test-tenant",
             prompt="Test prompt",
@@ -43,26 +48,30 @@ async def test_ask_agent_tool_basic():
 async def test_ask_agent_context_creation():
     """Test that ask_agent creates proper AgentContext."""
     mock_agent = Mock()
-    mock_agent.run = AsyncMock(
-        return_value=Mock(data={"answer": "Test", "confidence": 1.0, "tags": []})
-    )
+    mock_result = Mock()
+    mock_result.output = {"answer": "Test", "confidence": 1.0, "tags": []}
+    mock_result.usage = Mock(return_value=Mock(input_tokens=100, output_tokens=50))
+    mock_result.all_messages = Mock(return_value=[Mock(model_name="test-model")])
+    mock_agent.run = AsyncMock(return_value=mock_result)
 
-    with patch("percolate.mcp.tools.agent.create_agent", return_value=mock_agent):
+    mock_schema = {"title": "TestAgent", "properties": {}}
+
+    with patch("percolate.mcplib.tools.agent.create_pydantic_agent", return_value=mock_agent) as mock_create, \
+         patch("percolate.mcplib.tools.agent.load_agentlet_schema", return_value=mock_schema):
         await ask_agent(
+            ctx=None,
             agent_uri="test-agent",
             tenant_id="test-tenant",
             prompt="Test prompt",
-            user_id="user-123",
             session_id="session-456",
         )
 
-        # Verify create_agent was called with correct context
-        call_args = mock_agent.run.call_args
-        context = call_args[1]  # Second positional argument
+        # Verify create_pydantic_agent was called with correct context
+        call_args = mock_create.call_args
+        context = call_args.kwargs["context"]
 
         assert isinstance(context, AgentContext)
         assert context.tenant_id == "test-tenant"
-        assert context.user_id == "user-123"
         assert context.session_id == "session-456"
 
 
@@ -70,12 +79,18 @@ async def test_ask_agent_context_creation():
 async def test_ask_agent_model_override():
     """Test that model parameter overrides default."""
     mock_agent = Mock()
-    mock_agent.run = AsyncMock(
-        return_value=Mock(data={"answer": "Test", "confidence": 1.0, "tags": []})
-    )
+    mock_result = Mock()
+    mock_result.output = {"answer": "Test", "confidence": 1.0, "tags": []}
+    mock_result.usage = Mock(return_value=Mock(input_tokens=100, output_tokens=50))
+    mock_result.all_messages = Mock(return_value=[Mock(model_name="claude-opus-4")])
+    mock_agent.run = AsyncMock(return_value=mock_result)
 
-    with patch("percolate.mcp.tools.agent.create_agent", return_value=mock_agent):
+    mock_schema = {"title": "TestAgent", "properties": {}}
+
+    with patch("percolate.mcplib.tools.agent.create_pydantic_agent", return_value=mock_agent) as mock_create, \
+         patch("percolate.mcplib.tools.agent.load_agentlet_schema", return_value=mock_schema):
         await ask_agent(
+            ctx=None,
             agent_uri="test-agent",
             tenant_id="test-tenant",
             prompt="Test prompt",
@@ -83,8 +98,8 @@ async def test_ask_agent_model_override():
         )
 
         # Verify context has custom model
-        call_args = mock_agent.run.call_args
-        context = call_args[1]
+        call_args = mock_create.call_args
+        context = call_args.kwargs["context"]
 
         assert context.default_model == "claude-opus-4"
 
@@ -95,8 +110,12 @@ async def test_ask_agent_error_handling():
     mock_agent = Mock()
     mock_agent.run = AsyncMock(side_effect=ValueError("Invalid agent"))
 
-    with patch("percolate.mcp.tools.agent.create_agent", return_value=mock_agent):
+    mock_schema = {"title": "TestAgent", "properties": {}}
+
+    with patch("percolate.mcplib.tools.agent.create_pydantic_agent", return_value=mock_agent), \
+         patch("percolate.mcplib.tools.agent.load_agentlet_schema", return_value=mock_schema):
         result = await ask_agent(
+            ctx=None,
             agent_uri="invalid-agent",
             tenant_id="test-tenant",
             prompt="Test prompt",

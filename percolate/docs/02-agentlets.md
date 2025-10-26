@@ -26,7 +26,7 @@ Agent-lets are AI skills defined as JSON schemas. They are data artifacts that c
 
 ```json
 {
-  "fully_qualified_name": "percolate-agents-researcher",
+  "name": "percolate-agents-researcher",
   "short_name": "researcher",
   "version": "1.0.0",
   "description": "You are a research assistant...",
@@ -58,7 +58,7 @@ Agent-lets are AI skills defined as JSON schemas. They are data artifacts that c
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `fully_qualified_name` | string | Yes | Unique identifier (namespace-agents-name) |
+| `name` | string | Yes | Unique identifier (namespace-agents-name) |
 | `short_name` | string | Yes | Short name for CLI/UI |
 | `version` | string | Yes | Semantic version (1.0.0) |
 | `description` | string | Yes | System prompt (instructions, role, process) |
@@ -223,59 +223,3 @@ Agents can call other agents via MCP tools:
 }
 ```
 
-## Versioning
-
-### Semantic Versioning
-
-Agent-lets use semantic versioning:
-
-| Version | Change Type | Example |
-|---------|------------|---------|
-| `1.0.0` | Initial release | First working version |
-| `1.1.0` | Minor (backwards compatible) | Add new optional field |
-| `1.0.1` | Patch (bug fix) | Fix typo in prompt |
-| `2.0.0` | Major (breaking change) | Change output schema |
-
-### Version Evolution
-
-```json
-// Version 1.0.0
-{
-  "version": "1.0.0",
-  "output_schema": {
-    "properties": {
-      "findings": {"type": "array"}
-    }
-  }
-}
-
-// Version 1.1.0 - add optional field
-{
-  "version": "1.1.0",
-  "output_schema": {
-    "properties": {
-      "findings": {"type": "array"},
-      "confidence": {"type": "number"}  // New optional field
-    }
-  }
-}
-
-// Version 2.0.0 - breaking change
-{
-  "version": "2.0.0",
-  "output_schema": {
-    "properties": {
-      "results": {"type": "array"}  // Renamed field (breaking)
-    }
-  }
-}
-```
-
-### Best Practices
-
-1. **Start with 1.0.0** - no 0.x versions for production agents
-2. **Increment major version** - for breaking changes to output schema
-3. **Increment minor version** - for backwards-compatible additions
-4. **Increment patch version** - for prompt improvements without schema changes
-5. **Track versions in git** - tag releases (v1.0.0)
-6. **Document changes** - maintain CHANGELOG.md

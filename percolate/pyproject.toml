@@ -25,27 +25,22 @@ dependencies = [
     "fastapi>=0.115.5",
     "uvicorn[standard]>=0.34.0",
     "python-multipart>=0.0.20",
-
     # Agent framework
     "pydantic>=2.10.5",
     "pydantic-settings>=2.7.1",
     "pydantic-ai>=0.8.1",
-
     # MCP
     "fastmcp>=2.12.4",
-
     # Authentication & Crypto
     "pyjwt[crypto]>=2.10.1",
     "cryptography>=44.0.0",
-
     # Database & storage
+    "percolate-rocks>=0.3.2",
     "asyncpg>=0.30.0",
     "redis>=5.2.1",
-
     # CLI
     "typer>=0.15.1",
     "rich>=13.9.4",
-
     # Observability
     "opentelemetry-api>=1.29.0",
     "opentelemetry-sdk>=1.29.0",
@@ -56,10 +51,10 @@ dependencies = [
     "openinference-instrumentation-pydantic-ai>=0.1.9",
     "arize-phoenix>=12.6.1",
     "loguru>=0.7.3",
-
     # Utilities
     "httpx>=0.28.1",
     "python-dotenv>=1.0.1",
+    "mcp>=1.16.0",
 ]
 
 [project.optional-dependencies]

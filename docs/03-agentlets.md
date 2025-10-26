@@ -489,5 +489,4 @@ agent = await create_agent(context, result_type=DynamicAgent)
 
 - [Pydantic AI Documentation](https://ai.pydantic.dev)
 - [FastMCP Documentation](https://github.com/jlowin/fastmcp)
-- [Carrier Reference Implementation](https://github.com/nshift/carrier) (internal)
 - [OpenTelemetry Python](https://opentelemetry.io/docs/languages/python/)

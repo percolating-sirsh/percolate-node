@@ -8,6 +8,7 @@ from loguru import logger
 from percolate.agents.context import AgentContext
 from percolate.agents.factory import create_agent as create_pydantic_agent
 from percolate.agents.registry import load_agentlet_schema
+from percolate.memory import SessionStore
 
 
 async def create_agent(
@@ -84,6 +85,19 @@ async def ask_agent(
         'success'
     """
     try:
+        # Initialize session store
+        session_store = SessionStore()
+
+        # Save user message to session (if session_id provided)
+        if session_id:
+            session_store.save_message(
+                session_id=session_id,
+                tenant_id=tenant_id,
+                role="user",
+                content=prompt,
+                agent_uri=agent_uri,
+            )
+
         # Load agent schema
         agent_schema = None
 
@@ -151,6 +165,21 @@ async def ask_agent(
         else:
             # If result has a model_dump method (Pydantic model), use it
             response_content = response_output.model_dump() if hasattr(response_output, "model_dump") else str(response_output)
+
+        # Save assistant response to session (if session_id provided)
+        if session_id:
+            session_store.save_message(
+                session_id=session_id,
+                tenant_id=tenant_id,
+                role="assistant",
+                content=response_content,
+                agent_uri=agent_uri,
+                model=model_name,
+                usage={
+                    "input_tokens": usage.input_tokens if usage else 0,
+                    "output_tokens": usage.output_tokens if usage else 0,
+                },
+            )
 
         return {
             "status": "success",

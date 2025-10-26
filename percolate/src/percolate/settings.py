@@ -17,8 +17,8 @@ class AuthSettings(BaseSettings):
 
     enabled: bool = Field(default=False, description="Enable authentication")
     provider: str = Field(
-        default="p8fs",
-        description="Auth provider: disabled, p8fs, oidc, dev",
+        default="device",
+        description="Auth provider: disabled, device, oidc, dev",
     )
 
     # JWT settings (keypair encryption - ES256 with ECDSA P-256)
@@ -43,16 +43,16 @@ MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEbnK6iUVLgxlDGqs82jHgnJY5hiZX
     )
     refresh_token_expire_days: int = Field(default=30, description="Refresh token lifetime")
 
-    # P8FS device key storage
-    p8fs_server_stored_keys: bool = Field(
+    # Device key storage
+    device_server_stored_keys: bool = Field(
         default=True,
         description="Server generates and stores device keys (true) vs device-generated (false)",
     )
-    p8fs_tenant_store: str = Field(
+    device_tenant_store: str = Field(
         default="filesystem",
         description="Tenant storage backend: filesystem | rem (percolate-rocks)",
     )
-    p8fs_keys_path: str = Field(
+    device_keys_path: str = Field(
         default="~/.p8/tenants",
         description="Path for tenant data (filesystem mode or REM database path)",
     )

@@ -3,13 +3,14 @@
 import time
 import uuid
 
-from fastapi import APIRouter, Header, HTTPException
+from fastapi import APIRouter, Depends, Header, HTTPException
 from fastapi.responses import StreamingResponse
 from loguru import logger
 
 from percolate.agents.context import AgentContext
 from percolate.agents.factory import create_agent
 from percolate.agents.registry import load_agentlet_schema
+from percolate.api.routers.chat.dependencies import get_session_store
 from percolate.api.routers.chat.models import (
     ChatCompletionRequest,
     ChatCompletionResponse,
@@ -30,6 +31,7 @@ async def chat_completions(
     x_tenant_id: str = Header(default="default", alias="X-Tenant-Id"),
     x_session_id: str | None = Header(default=None, alias="X-Session-Id"),
     x_user_id: str | None = Header(default=None, alias="X-User-Id"),
+    session_store: SessionStore | None = Depends(get_session_store),
 ):
     """
     OpenAI-compatible chat completions with agent-let support.
@@ -106,9 +108,6 @@ async def chat_completions(
         f"Chat completion request: agent={agent_uri}, tenant={x_tenant_id}, "
         f"session={x_session_id}, stream={body.stream}"
     )
-
-    # Initialize session store for persistence
-    session_store = SessionStore() if x_session_id else None
 
     try:
         # Save user message to session (if tracking enabled)

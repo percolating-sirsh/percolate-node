@@ -31,7 +31,7 @@ def create_pydantic_tool(mcp_tool_func: Callable) -> Tool:
         A Pydantic AI Tool instance that calls the MCP tool with ctx=None
 
     Example:
-        from percolate.mcp.tools.search import search_memory
+        from percolate.mcplib.tools.search import search_memory
 
         # Create tool
         tool = create_pydantic_tool(search_memory)

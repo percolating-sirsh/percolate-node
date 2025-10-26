@@ -6,7 +6,7 @@ Creates and manages authentication provider instances based on configuration.
 from loguru import logger
 
 from percolate.auth.providers import OAuthProvider
-from percolate.auth.provider_p8fs import P8FSProvider
+from percolate.auth.provider_device import DeviceProvider
 from percolate.auth.provider_oidc import OIDCProvider
 from percolate.settings import settings
 
@@ -16,7 +16,7 @@ def get_auth_provider() -> OAuthProvider | None:
 
     Returns provider instance based on settings.auth_provider:
     - 'disabled' or auth_enabled=False: None (auth disabled)
-    - 'p8fs': P8FS mobile device provider
+    - 'device': Percolate mobile device provider
     - 'oidc': External OIDC provider
 
     Returns:
@@ -41,9 +41,9 @@ def get_auth_provider() -> OAuthProvider | None:
         logger.info("Authentication provider set to 'disabled'")
         return None
 
-    elif provider_name == "p8fs":
-        logger.info("Initializing P8FS device authorization provider")
-        return P8FSProvider()
+    elif provider_name == "device":
+        logger.info("Initializing Percolate device authorization provider")
+        return DeviceProvider()
 
     elif provider_name == "oidc":
         logger.info(
@@ -59,7 +59,7 @@ def get_auth_provider() -> OAuthProvider | None:
     else:
         raise ValueError(
             f"Unsupported auth provider: {provider_name}. "
-            f"Valid options: disabled, p8fs, oidc, dev"
+            f"Valid options: disabled, device, oidc, dev"
         )
 
 

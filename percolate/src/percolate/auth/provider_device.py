@@ -1,4 +1,4 @@
-"""P8FS mobile device authorization provider.
+"""Percolate mobile device authorization provider.
 
 Implements custom mobile-first authentication with:
 - Device authorization flow (RFC 8628)
@@ -14,8 +14,8 @@ from percolate.auth.jwt_simple import JWTManager
 from percolate.settings import settings
 
 
-class P8FSProvider(OAuthProvider):
-    """P8FS device authorization provider.
+class DeviceProvider(OAuthProvider):
+    """Percolate device authorization provider.
 
     Custom OAuth provider using device flow with Ed25519 signatures.
     Designed for mobile-first authentication where devices register
@@ -30,7 +30,7 @@ class P8FSProvider(OAuthProvider):
     """
 
     def __init__(self):
-        """Initialize P8FS provider with JWT manager."""
+        """Initialize device provider with JWT manager."""
         self.jwt_manager = JWTManager(
             private_key=settings.auth.jwt_private_key,
             public_key=settings.auth.jwt_public_key,
@@ -38,7 +38,7 @@ class P8FSProvider(OAuthProvider):
         )
 
     async def validate_token(self, token: str) -> User:
-        """Validate JWT access token issued by P8FS.
+        """Validate JWT access token issued by device provider.
 
         Args:
             token: JWT access token
@@ -60,14 +60,14 @@ class P8FSProvider(OAuthProvider):
                 scopes=payload.get("scope", []),
                 metadata={
                     "device_id": payload.get("device"),
-                    "provider": "p8fs",
+                    "provider": "device",
                 },
             )
         except Exception as e:
             raise ValueError(f"Token validation failed: {e}") from e
 
     async def get_discovery_metadata(self, base_url: str) -> dict[str, Any]:
-        """Get P8FS OAuth discovery document.
+        """Get Percolate device OAuth discovery document.
 
         Args:
             base_url: API base URL
@@ -99,4 +99,4 @@ class P8FSProvider(OAuthProvider):
         Returns:
             Provider identifier
         """
-        return "p8fs"
+        return "device"

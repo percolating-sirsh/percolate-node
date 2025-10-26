@@ -5,67 +5,27 @@ Sessions and messages are stored as separate tables (parent-child relationship):
 - messages: individual messages linked to session via session_id
 
 Schemas are defined in percolate-rocks (builtin.rs) and auto-registered.
-Python code just uses the tables - NO duplicate schema definitions.
+Models are imported from percolate-rocks - NO duplicate definitions.
 """
 
-from datetime import datetime
 from typing import Any
 import uuid
 
-from pydantic import BaseModel, Field
 from loguru import logger
+from rem_db.models import ChatSession, ChatMessage, ChatFeedback
 
+from percolate.memory.constants import TABLE_SESSIONS, TABLE_MESSAGES, TABLE_FEEDBACK
 from percolate.memory.database import get_database
+from percolate.memory.utils import utc_timestamp
 
-# NOTE: Schemas are now defined in percolate-rocks/src/schema/builtin.rs
-# They are automatically registered when the database opens.
-# We keep Pydantic models here for type hints and validation only.
+# NOTE: Models imported from percolate-rocks/python/rem_db/models.py
+# Schemas defined in percolate-rocks/src/schema/builtin.rs
+# Both are kept in sync and auto-registered when database opens.
 
-# Removed SESSION_SCHEMA, MESSAGE_SCHEMA, FEEDBACK_SCHEMA - now in rocks!
-
-
-class Message(BaseModel):
-    """Individual message in a conversation."""
-
-    message_id: str = Field(description="Unique message identifier")
-    session_id: str = Field(description="Parent session identifier")
-    tenant_id: str = Field(description="Tenant scope for isolation")
-    role: str = Field(description="Message role: user, assistant, or system")
-    content: str = Field(description="Message content")
-    model: str | None = Field(default=None, description="Model that generated response")
-    timestamp: datetime = Field(default_factory=datetime.utcnow)
-    usage: dict[str, int] | None = Field(default=None, description="Token usage metrics")
-    trace_id: str | None = Field(default=None, description="OTEL trace ID")
-    span_id: str | None = Field(default=None, description="OTEL span ID")
-
-
-class Feedback(BaseModel):
-    """User feedback on agent interactions."""
-
-    feedback_id: str = Field(description="Unique feedback identifier")
-    session_id: str = Field(description="Parent session identifier")
-    message_id: str | None = Field(default=None, description="Specific message being rated")
-    tenant_id: str = Field(description="Tenant scope for isolation")
-    trace_id: str | None = Field(default=None, description="OTEL trace ID")
-    span_id: str | None = Field(default=None, description="OTEL span ID")
-    label: str | None = Field(default=None, description="Feedback label (any string)")
-    score: float | None = Field(default=None, description="Feedback score 0-1")
-    feedback_text: str | None = Field(default=None, description="Optional comment")
-    user_id: str | None = Field(default=None, description="User providing feedback")
-    timestamp: datetime = Field(default_factory=datetime.utcnow)
-    metadata: dict[str, Any] = Field(default_factory=dict)
-
-
-class Session(BaseModel):
-    """Conversation session metadata."""
-
-    session_id: str = Field(description="Unique session identifier")
-    tenant_id: str = Field(description="Tenant scope for isolation")
-    agent_uri: str | None = Field(default=None, description="Agent used in session")
-    message_count: int = Field(default=0, description="Number of messages")
-    metadata: dict[str, Any] = Field(default_factory=dict, description="Additional metadata")
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    updated_at: datetime = Field(default_factory=datetime.utcnow)
+# Re-export models for backward compatibility
+Session = ChatSession
+Message = ChatMessage
+Feedback = ChatFeedback
 
 
 class SessionStore:
@@ -79,7 +39,7 @@ class SessionStore:
     """
 
     def __init__(self, db_path: str | None = None):
-        """Initialize session store and register schemas.
+        """Initialize session store.
 
         Args:
             db_path: Optional database path override
@@ -87,11 +47,108 @@ class SessionStore:
         self.db = get_database(db_path)
         if not self.db:
             logger.warning("REM database unavailable - sessions will not persist")
-            return
 
-        # Schemas are auto-registered from percolate-rocks builtin schemas
-        # No need to register them here!
-        logger.debug("Using sessions, messages, and feedback schemas from percolate-rocks")
+    def _build_session_data(
+        self,
+        session_id: str,
+        tenant_id: str,
+        agent_uri: str | None,
+        metadata: dict[str, Any] | None,
+        existing_session: ChatSession | None,
+        timestamp: str,
+    ) -> dict[str, Any]:
+        """Build session data dict for upsert.
+
+        Args:
+            session_id: Session identifier
+            tenant_id: Tenant scope
+            agent_uri: Optional agent identifier
+            metadata: Optional session metadata
+            existing_session: Existing session if updating
+            timestamp: ISO 8601 timestamp
+
+        Returns:
+            Session data dictionary for database insert
+        """
+        if existing_session:
+            return {
+                "session_id": session_id,
+                "tenant_id": tenant_id,
+                "agent_uri": agent_uri or existing_session.agent_uri,
+                "message_count": existing_session.message_count + 1,
+                "metadata": metadata or existing_session.metadata,
+                "created_at": existing_session.created_at.replace(tzinfo=None).isoformat() + "Z",
+                "updated_at": timestamp,
+            }
+        else:
+            return {
+                "session_id": session_id,
+                "tenant_id": tenant_id,
+                "agent_uri": agent_uri,
+                "message_count": 1,
+                "metadata": metadata or {},
+                "created_at": timestamp,
+                "updated_at": timestamp,
+            }
+
+    def _upsert_session(self, session_data: dict[str, Any]) -> str:
+        """Upsert session to database.
+
+        Args:
+            session_data: Session data dictionary
+
+        Returns:
+            Entity ID from database
+        """
+        entity_id = self.db.insert(TABLE_SESSIONS, session_data)
+        logger.debug(f"Upserted session {session_data['session_id']} (entity: {entity_id})")
+        return entity_id
+
+    def _insert_message(
+        self,
+        session_id: str,
+        tenant_id: str,
+        role: str,
+        content: str,
+        timestamp: str,
+        model: str | None = None,
+        usage: dict[str, int] | None = None,
+        trace_id: str | None = None,
+        span_id: str | None = None,
+    ) -> str:
+        """Insert message to database.
+
+        Args:
+            session_id: Parent session identifier
+            tenant_id: Tenant scope
+            role: Message role
+            content: Message content
+            timestamp: ISO 8601 timestamp
+            model: Optional model identifier
+            usage: Optional token usage metrics
+            trace_id: Optional OTEL trace ID
+            span_id: Optional OTEL span ID
+
+        Returns:
+            Message ID (UUID)
+        """
+        message_id = str(uuid.uuid4())
+        message_data = {
+            "message_id": message_id,
+            "session_id": session_id,
+            "tenant_id": tenant_id,
+            "role": role,
+            "content": content,
+            "model": model,
+            "timestamp": timestamp,
+            "usage": usage,
+            "trace_id": trace_id,
+            "span_id": span_id,
+        }
+
+        entity_id = self.db.insert(TABLE_MESSAGES, message_data)
+        logger.debug(f"Inserted message {message_id} to session {session_id} (entity: {entity_id})")
+        return message_id
 
     def save_message(
         self,
@@ -110,86 +167,38 @@ class SessionStore:
 
         Creates/updates session and inserts new message.
 
-        Tables:
-        1. Upserts session (via key_field=session_id)
-        2. Inserts message (new row, links to session)
-
         Args:
             session_id: Session identifier
             tenant_id: Tenant scope for isolation
             role: Message role (user, assistant, system)
-            content: Message content (string only)
+            content: Message content
             agent_uri: Optional agent identifier
             model: Model that generated response
             usage: Token usage metrics
+            trace_id: OTEL trace ID
+            span_id: OTEL span ID
             metadata: Additional session metadata
 
         Returns:
             Message ID if successful, None otherwise
-
-        Example:
-            >>> store = SessionStore()
-            >>> msg_id = store.save_message(
-            ...     session_id="sess-123",
-            ...     tenant_id="tenant-abc",
-            ...     role="user",
-            ...     content="What is percolate?"
-            ... )
         """
         if not self.db:
             logger.debug(f"Skipping session save (db unavailable): {session_id}")
             return None
 
         try:
-            now = datetime.utcnow()
-            timestamp = now.isoformat() + "Z"
-
-            # 1. Upsert session (increment message_count, update timestamp)
+            timestamp = utc_timestamp()
             existing_session = self.get_session(session_id, tenant_id)
 
-            if existing_session:
-                # Update existing session
-                session_data = {
-                    "session_id": session_id,
-                    "tenant_id": tenant_id,
-                    "agent_uri": agent_uri or existing_session.agent_uri,
-                    "message_count": existing_session.message_count + 1,
-                    "metadata": metadata or existing_session.metadata,
-                    "created_at": existing_session.created_at.replace(tzinfo=None).isoformat() + "Z",
-                    "updated_at": timestamp,
-                }
-            else:
-                # Create new session
-                session_data = {
-                    "session_id": session_id,
-                    "tenant_id": tenant_id,
-                    "agent_uri": agent_uri,
-                    "message_count": 1,
-                    "metadata": metadata or {},
-                    "created_at": timestamp,
-                    "updated_at": timestamp,
-                }
+            session_data = self._build_session_data(
+                session_id, tenant_id, agent_uri, metadata, existing_session, timestamp
+            )
+            self._upsert_session(session_data)
 
-            session_entity_id = self.db.insert("sessions", session_data)
-            logger.debug(f"Upserted session {session_id} (entity: {session_entity_id})")
-
-            # 2. Insert message (new row)
-            message_id = str(uuid.uuid4())
-            message_data = {
-                "message_id": message_id,
-                "session_id": session_id,
-                "tenant_id": tenant_id,
-                "role": role,
-                "content": content,
-                "model": model,
-                "timestamp": timestamp,
-                "usage": usage,
-                "trace_id": trace_id,
-                "span_id": span_id,
-            }
-
-            message_entity_id = self.db.insert("messages", message_data)
-            logger.debug(f"Inserted message {message_id} to session {session_id} (entity: {message_entity_id})")
+            message_id = self._insert_message(
+                session_id, tenant_id, role, content, timestamp,
+                model, usage, trace_id, span_id
+            )
 
             return message_id
 
@@ -197,36 +206,24 @@ class SessionStore:
             logger.error(f"Failed to save message: {e}")
             return None
 
-    def get_session(self, session_id: str, tenant_id: str) -> Session | None:
+    def get_session(self, session_id: str, tenant_id: str) -> ChatSession | None:
         """Retrieve session metadata by ID.
 
         Args:
-            session_id: Session identifier (key field)
+            session_id: Session identifier
             tenant_id: Tenant scope for isolation
 
         Returns:
             Session metadata if found, None otherwise
-
-        Note:
-            This only returns session metadata. Use get_messages() to get messages.
-
-        Example:
-            >>> store = SessionStore()
-            >>> session = store.get_session("sess-123", "tenant-abc")
-            >>> if session:
-            ...     print(f"Session has {session.message_count} messages")
         """
         if not self.db:
             return None
 
         try:
-            # Lookup by key field (session_id)
-            results = self.db.lookup("sessions", session_id)
-
+            results = self.db.lookup(TABLE_SESSIONS, session_id)
             if not results:
                 return None
 
-            # Get first result (should only be one due to unique key)
             session_dict = results[0]
 
             # Verify tenant_id matches (security check)
@@ -237,37 +234,28 @@ class SessionStore:
                 )
                 return None
 
-            # Convert to Session model
-            return Session(**session_dict)
+            return ChatSession(**session_dict)
 
         except Exception as e:
             logger.error(f"Failed to retrieve session {session_id}: {e}")
             return None
 
-    def get_messages(self, session_id: str, tenant_id: str, limit: int = 100) -> list[Message]:
+    def get_messages(self, session_id: str, tenant_id: str, limit: int = 100) -> list[ChatMessage]:
         """Retrieve all messages for a session.
 
         Args:
             session_id: Session identifier
             tenant_id: Tenant scope for isolation
-            limit: Maximum number of messages to return (default: 100)
+            limit: Maximum number of messages to return
 
         Returns:
             List of messages ordered by timestamp
-
-        Example:
-            >>> store = SessionStore()
-            >>> messages = store.get_messages("sess-123", "tenant-abc")
-            >>> for msg in messages:
-            ...     print(f"[{msg.role}] {msg.content}")
         """
         if not self.db:
             return []
 
         try:
-            # Query messages table for all messages with this session_id
             # TODO: Replace with proper query when percolate-rocks supports SQL queries
-            # For now, we'll need to iterate through messages (not efficient)
             logger.warning("get_messages not yet implemented - requires SQL query support")
             return []
 
@@ -293,36 +281,24 @@ class SessionStore:
         Args:
             session_id: Session identifier
             tenant_id: Tenant scope
-            label: Optional feedback label (any string, e.g., 'thumbs_up', 'helpful')
+            label: Optional feedback label
             message_id: Optional specific message being rated
-            score: Optional feedback score 0-1 (0=thumbs_down, 1=thumbs_up)
+            score: Optional feedback score 0-1
             feedback_text: Optional comment text
-            trace_id: Optional OTEL trace ID for linking
-            span_id: Optional OTEL span ID for linking
+            trace_id: Optional OTEL trace ID
+            span_id: Optional OTEL span ID
             user_id: Optional user providing feedback
             metadata: Additional metadata
 
         Returns:
             Feedback ID if successful, None otherwise
-
-        Example:
-            >>> store = SessionStore()
-            >>> feedback_id = store.save_feedback(
-            ...     session_id="sess-123",
-            ...     tenant_id="tenant-abc",
-            ...     label="thumbs_up",
-            ...     score=1.0,
-            ...     message_id="msg-456"
-            ... )
         """
         if not self.db:
             logger.debug(f"Skipping feedback save (db unavailable): {session_id}")
             return None
 
         try:
-            now = datetime.utcnow()
-            timestamp = now.isoformat() + "Z"
-
+            timestamp = utc_timestamp()
             feedback_id = str(uuid.uuid4())
             feedback_data = {
                 "feedback_id": feedback_id,
@@ -339,8 +315,8 @@ class SessionStore:
                 "metadata": metadata or {},
             }
 
-            feedback_entity_id = self.db.insert("feedback", feedback_data)
-            logger.debug(f"Saved feedback {feedback_id} for session {session_id} (entity: {feedback_entity_id})")
+            entity_id = self.db.insert(TABLE_FEEDBACK, feedback_data)
+            logger.debug(f"Saved feedback {feedback_id} for session {session_id} (entity: {entity_id})")
 
             return feedback_id
 
@@ -348,7 +324,7 @@ class SessionStore:
             logger.error(f"Failed to save feedback: {e}")
             return None
 
-    def list_sessions(self, tenant_id: str, limit: int = 100) -> list[Session]:
+    def list_sessions(self, tenant_id: str, limit: int = 100) -> list[ChatSession]:
         """List sessions for a tenant.
 
         Args:
@@ -357,22 +333,13 @@ class SessionStore:
 
         Returns:
             List of sessions ordered by updated_at descending
-
-        Example:
-            >>> store = SessionStore()
-            >>> sessions = store.list_sessions("tenant-abc", limit=10)
-            >>> for session in sessions:
-            ...     print(session.session_id, len(session.messages))
         """
         if not self.db:
             return []
 
         try:
-            # Note: This requires rem query which is not implemented yet
-            # sql = f"SELECT * FROM sessions WHERE tenant_id = '{tenant_id}' ORDER BY updated_at DESC LIMIT {limit}"
-            # results = self.db.query(sql)
-            # return [Session(**r) for r in results]
-            logger.debug(f"Session listing not yet implemented (rem query TODO)")
+            # TODO: Replace with proper query when percolate-rocks supports SQL queries
+            logger.debug("Session listing not yet implemented (rem query TODO)")
             return []
 
         except Exception as e:

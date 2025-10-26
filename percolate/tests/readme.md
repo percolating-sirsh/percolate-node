@@ -112,7 +112,7 @@ uv run pytest --cov=percolate --cov-report=html
 ```python
 # tests/unit/mcp/test_tools.py
 import pytest
-from percolate.mcp.tools.agent import ask_agent
+from percolate.mcplib.tools.agent import ask_agent
 
 @pytest.mark.asyncio
 async def test_ask_agent_basic():
