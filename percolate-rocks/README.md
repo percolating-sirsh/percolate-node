@@ -848,6 +848,26 @@ maturin develop
 maturin build --release
 ```
 
+### Publishing to PyPI
+
+```bash
+# Build release wheel (macOS ARM64)
+maturin build --release
+
+# Upload to PyPI (requires PYPI_TOKEN environment variable)
+source ~/.bash_profile
+export MATURIN_PYPI_TOKEN=$PYPI_TOKEN
+maturin upload target/wheels/percolate_rocks-*.whl
+
+# Or publish directly (builds and uploads)
+source ~/.bash_profile
+export MATURIN_PYPI_TOKEN=$PYPI_TOKEN
+maturin publish --no-sdist
+```
+
+**Note:** PyPI now requires API token authentication (username/password deprecated).
+Set `PYPI_TOKEN` in your shell profile with your PyPI API token.
+
 ### Testing
 
 ```bash
