@@ -69,6 +69,9 @@ sqlparser = "0.51"
 reqwest = { version = "0.12", features = ["json", "native-tls-vendored"] }  # For OpenAI API calls (vendored OpenSSL for cross-compilation)
 embed_anything = "0.6"  # Local embedding models (all-MiniLM-L6-v2, etc.)
 
+# Agent runtime (lightweight, for background indexing only)
+tiktoken-rs = "0.5"  # Token counting for chunking
+
 # Export formats
 csv = "1"  # CSV export
 parquet = { version = "54.2", features = ["arrow"] }
