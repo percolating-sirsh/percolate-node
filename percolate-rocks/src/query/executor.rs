@@ -3,7 +3,7 @@
 //! Executes parsed SQL queries against entity storage.
 
 use crate::types::{Result, DatabaseError, Entity};
-use sqlparser::ast::{Statement, SelectItem, Expr, BinaryOperator, Value, OrderByExpr, Function, FunctionArg};
+use sqlparser::ast::{Statement, SelectItem, Expr, BinaryOperator, Value, Function, FunctionArg};
 
 /// Execute SQL query against entities.
 pub fn execute_query(statement: &Statement, entities: Vec<Entity>) -> Result<serde_json::Value> {

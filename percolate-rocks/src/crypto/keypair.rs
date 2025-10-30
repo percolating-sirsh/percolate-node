@@ -179,10 +179,10 @@ impl TenantKeyPair {
 
         // Generate random nonce
         let nonce_bytes: [u8; 12] = rand::random();
-        let nonce = Nonce::from_slice(&nonce_bytes);
+        let nonce_array = Nonce::try_from(&nonce_bytes[..]).unwrap();
 
         let ciphertext = cipher
-            .encrypt(nonce, plaintext)
+            .encrypt(&nonce_array, plaintext)
             .map_err(|e| DatabaseError::CryptoError(format!("Encryption failed: {}", e)))?;
 
         // Return nonce || ciphertext
@@ -231,10 +231,10 @@ impl TenantKeyPair {
 
         // Split nonce and ciphertext
         let (nonce_bytes, encrypted_data) = ciphertext.split_at(12);
-        let nonce = Nonce::from_slice(nonce_bytes);
+        let nonce_array = Nonce::try_from(nonce_bytes).unwrap();
 
         let plaintext = cipher
-            .decrypt(nonce, encrypted_data)
+            .decrypt(&nonce_array, encrypted_data)
             .map_err(|e| DatabaseError::CryptoError(format!("Decryption failed: {}", e)))?;
 
         Ok(plaintext)

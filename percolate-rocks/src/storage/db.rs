@@ -23,7 +23,7 @@ use crate::crypto::TenantKeyPair;
 use crate::otel::{db_span, DbOperation};
 use crate::storage::column_families::CF_KEYS;
 use crate::types::{DatabaseError, Result};
-use rocksdb::{DB, ColumnFamily};
+use rocksdb::DB;
 use std::path::Path;
 use std::sync::Arc;
 

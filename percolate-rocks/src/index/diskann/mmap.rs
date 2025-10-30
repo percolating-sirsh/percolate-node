@@ -48,7 +48,6 @@ use crate::types::error::{DatabaseError, Result};
 use memmap2::{Mmap, MmapOptions};
 use std::fs::File;
 use std::io::{BufWriter, Write};
-use std::path::Path;
 
 /// Magic number for file format validation.
 const MAGIC: &[u8; 8] = b"DISKANN\0";

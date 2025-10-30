@@ -1,7 +1,6 @@
 //! Async operation wrappers (Tokio → Asyncio).
 
 use pyo3::prelude::*;
-use pyo3_asyncio::tokio::future_into_py;
 
 /// Wrapper for async search operation.
 ///

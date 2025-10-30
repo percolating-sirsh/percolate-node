@@ -2,6 +2,8 @@
 
 Kubernetes deployment manifests for Percolate multi-tenant system using Kustomize overlays and Argo CD ApplicationSets.
 
+> **📚 Full documentation index**: See [INDEX.md](INDEX.md) for complete navigation of all docs, testing guides, and deployment options.
+
 ## Architecture
 
 - **Shared resource pool**: All tenants share namespaces, pods, nodes
@@ -10,7 +12,7 @@ Kubernetes deployment manifests for Percolate multi-tenant system using Kustomiz
 - **DRY with Kustomize**: Single source of truth with tier-specific overlays
 - **GitOps with Argo CD**: Automated deployment via ApplicationSets
 
-See [system.md](system.md) for detailed architecture and [testing-plan.md](testing-plan.md) for test strategy.
+See [system.md](system.md) for detailed architecture documentation.
 
 ## Prerequisites
 
@@ -78,25 +80,20 @@ Generated from single source with Kustomize patches:
 
 ### Local testing with Kind
 
-For local development and testing on your laptop:
+We provide two Kind-based testing environments:
 
-```bash
-# Create Kind cluster with minimal resources (~5GB RAM)
-./k8s/kind-setup.sh
+**1. Topology testing** (recommended for development): [test-topology.md](test-topology.md)
+- Lightweight (~3GB total)
+- Tests database-first architecture, tenant affinity, KEDA scaling
+- OpenTelemetry + Prometheus observability stack
+- No external dependencies (OpenBao, Redis, S3)
+- Quick validation of core topology patterns
 
-# This will:
-# - Create Kind cluster with local registry
-# - Install Istio (minimal profile) and KEDA
-# - Build and load images locally
-# - Deploy single tier with reduced resources
-# - Set up port-forwards to services
-```
-
-**Access services**:
-- Gateway: http://localhost:8000
-- API: http://localhost:8001
-
-See [KIND.md](KIND.md) for detailed local testing guide, resource tuning, and troubleshooting.
+**2. Full stack testing**: [kind.md](kind.md)
+- Complete deployment (~5GB total)
+- All production components (OpenBao, NATS, Redis, Gateway)
+- Multiple tiers (small, medium, large)
+- Closer to production environment
 
 ### Option 0: Automated installation (production cluster)
 

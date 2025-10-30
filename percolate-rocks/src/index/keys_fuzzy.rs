@@ -28,7 +28,6 @@
 use crate::index::bm25::{Tokenizer, TokenizerConfig};
 use crate::storage::{column_families::CF_BM25_INDEX, column_families::CF_KEY_INDEX, Storage};
 use crate::types::error::{DatabaseError, Result};
-use rocksdb::IteratorMode;
 use std::collections::HashMap;
 use uuid::Uuid;
 

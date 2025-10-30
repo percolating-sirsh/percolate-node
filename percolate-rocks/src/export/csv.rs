@@ -1,7 +1,6 @@
 //! CSV export for spreadsheets.
 
 use crate::types::{Result, Entity, DatabaseError};
-use csv::Writer;
 use std::collections::BTreeSet;
 use std::fs::File;
 use std::path::Path;

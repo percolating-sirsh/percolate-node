@@ -1,0 +1,189 @@
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-datasources
+  namespace: percolate-test
+data:
+  datasources.yaml: |
+    apiVersion: 1
+    datasources:
+    - name: Prometheus
+      type: prometheus
+      access: proxy
+      url: http://prometheus:9090
+      isDefault: true
+      editable: true
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-dashboards-config
+  namespace: percolate-test
+data:
+  dashboards.yaml: |
+    apiVersion: 1
+    providers:
+    - name: 'default'
+      orgId: 1
+      folder: ''
+      type: file
+      disableDeletion: false
+      updateIntervalSeconds: 10
+      allowUiUpdates: true
+      options:
+        path: /var/lib/grafana/dashboards
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-dashboard-topology
+  namespace: percolate-test
+data:
+  topology-dashboard.json: |
+    {
+      "dashboard": {
+        "title": "Percolate Topology",
+        "panels": [
+          {
+            "id": 1,
+            "title": "Active Tenants by Tier",
+            "type": "graph",
+            "gridPos": {"x": 0, "y": 0, "w": 12, "h": 8},
+            "targets": [{
+              "expr": "percolate_active_tenants",
+              "legendFormat": "{{tier}}"
+            }]
+          },
+          {
+            "id": 2,
+            "title": "Request Rate by Tenant",
+            "type": "graph",
+            "gridPos": {"x": 12, "y": 0, "w": 12, "h": 8},
+            "targets": [{
+              "expr": "rate(percolate_tenant_requests_total[1m])",
+              "legendFormat": "{{tenant_id}}"
+            }]
+          },
+          {
+            "id": 3,
+            "title": "Pod Count",
+            "type": "stat",
+            "gridPos": {"x": 0, "y": 8, "w": 6, "h": 4},
+            "targets": [{
+              "expr": "count(up{app=\"test-db\"})"
+            }]
+          },
+          {
+            "id": 4,
+            "title": "Total Active Tenants",
+            "type": "stat",
+            "gridPos": {"x": 6, "y": 8, "w": 6, "h": 4},
+            "targets": [{
+              "expr": "sum(percolate_active_tenants)"
+            }]
+          },
+          {
+            "id": 5,
+            "title": "Requests by Pod",
+            "type": "graph",
+            "gridPos": {"x": 0, "y": 12, "w": 12, "h": 8},
+            "targets": [{
+              "expr": "rate(percolate_tenant_requests_total[1m])",
+              "legendFormat": "{{pod}}"
+            }]
+          },
+          {
+            "id": 6,
+            "title": "Tenant Affinity Hits",
+            "type": "graph",
+            "gridPos": {"x": 12, "y": 12, "w": 12, "h": 8},
+            "targets": [{
+              "expr": "percolate_affinity_hits_total",
+              "legendFormat": "{{tenant_id}} -> {{pod}}"
+            }]
+          }
+        ],
+        "refresh": "5s",
+        "time": {"from": "now-15m", "to": "now"},
+        "timezone": "browser",
+        "schemaVersion": 16,
+        "version": 0
+      }
+    }
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: grafana
+  namespace: percolate-test
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: grafana
+  template:
+    metadata:
+      labels:
+        app: grafana
+    spec:
+      containers:
+      - name: grafana
+        image: grafana/grafana:10.2.0
+        ports:
+        - name: http
+          containerPort: 3000
+        env:
+        - name: GF_SECURITY_ADMIN_USER
+          value: "admin"
+        - name: GF_SECURITY_ADMIN_PASSWORD
+          value: "percolate"
+        - name: GF_USERS_ALLOW_SIGN_UP
+          value: "false"
+        - name: GF_AUTH_ANONYMOUS_ENABLED
+          value: "true"
+        - name: GF_AUTH_ANONYMOUS_ORG_ROLE
+          value: "Viewer"
+        volumeMounts:
+        - name: datasources
+          mountPath: /etc/grafana/provisioning/datasources
+        - name: dashboards-config
+          mountPath: /etc/grafana/provisioning/dashboards
+        - name: dashboards
+          mountPath: /var/lib/grafana/dashboards
+        resources:
+          requests:
+            cpu: 100m
+            memory: 128Mi
+          limits:
+            cpu: 200m
+            memory: 256Mi
+      volumes:
+      - name: datasources
+        configMap:
+          name: grafana-datasources
+      - name: dashboards-config
+        configMap:
+          name: grafana-dashboards-config
+      - name: dashboards
+        configMap:
+          name: grafana-dashboard-topology
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: grafana
+  namespace: percolate-test
+spec:
+  type: NodePort
+  ports:
+  - name: http
+    port: 3000
+    targetPort: 3000
+    nodePort: 30300
+  selector:
+    app: grafana

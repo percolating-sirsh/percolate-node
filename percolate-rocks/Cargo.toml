@@ -83,7 +83,7 @@ prost = "0.13"
 tokio-stream = "0.1"
 
 # Cryptography (for encryption at rest)
-chacha20poly1305 = "0.10"  # AEAD cipher for entity encryption
+chacha20poly1305 = "0.11.0-rc.1"  # AEAD cipher for entity encryption (updated for generic-array 1.x)
 ed25519-dalek = { version = "2", features = ["rand_core"] }  # Signing key pairs
 x25519-dalek = "2"  # Key exchange for ECDH
 argon2 = "0.5"  # Password hashing and key derivation

@@ -1,7 +1,7 @@
 //! Error conversions from Rust to Python.
 
 use pyo3::prelude::*;
-use pyo3::exceptions::{PyException, PyValueError, PyIOError, PyRuntimeError};
+use pyo3::exceptions::{PyValueError, PyIOError, PyRuntimeError};
 use crate::types::DatabaseError;
 
 /// Convert DatabaseError to PyErr.

@@ -66,7 +66,6 @@ pub use scorer::{BM25Scorer, BM25Params};
 pub use tokenizer::{Tokenizer, TokenizerConfig};
 
 use crate::types::error::Result;
-use std::collections::HashMap;
 
 /// BM25 full-text search index.
 #[derive(Debug)]

@@ -5,13 +5,12 @@
 use crate::types::{DatabaseError, Result};
 use argon2::{
     password_hash::{PasswordHasher, SaltString},
-    Argon2, PasswordHash, PasswordVerifier,
+    Argon2,
 };
 use chacha20poly1305::{
     aead::{Aead, KeyInit},
     ChaCha20Poly1305, Key, Nonce,
 };
-use rand::rngs::OsRng;
 
 /// Derive 32-byte key from password using Argon2.
 ///
@@ -83,15 +82,16 @@ pub fn encrypt_private_key(private_key: &[u8; 32], password: &str) -> Result<Vec
 
     // Derive encryption key
     let key = derive_key(password, &salt)?;
-    let cipher = ChaCha20Poly1305::new(Key::from_slice(&key));
+    let cipher_key = Key::try_from(&key[..]).unwrap();
+    let cipher = ChaCha20Poly1305::new(&cipher_key);
 
     // Generate random nonce
     let nonce_bytes: [u8; 12] = rand::random();
-    let nonce = Nonce::from_slice(&nonce_bytes);
+    let nonce_array = Nonce::try_from(&nonce_bytes[..]).unwrap();
 
     // Encrypt
     let ciphertext = cipher
-        .encrypt(nonce, private_key.as_ref())
+        .encrypt(&nonce_array, private_key.as_ref())
         .map_err(|e| DatabaseError::CryptoError(format!("Encryption failed: {}", e)))?;
 
     // Return salt || nonce || ciphertext
@@ -143,13 +143,14 @@ pub fn decrypt_private_key(encrypted: &[u8], password: &str) -> Result<[u8; 32]>
 
     // Derive decryption key
     let key = derive_key(password, salt)?;
-    let cipher = ChaCha20Poly1305::new(Key::from_slice(&key));
+    let cipher_key = Key::try_from(&key[..]).unwrap();
+    let cipher = ChaCha20Poly1305::new(&cipher_key);
 
-    let nonce = Nonce::from_slice(nonce_bytes);
+    let nonce_array = Nonce::try_from(nonce_bytes).unwrap();
 
     // Decrypt
     let plaintext = cipher
-        .decrypt(nonce, ciphertext)
+        .decrypt(&nonce_array, ciphertext)
         .map_err(|e| DatabaseError::CryptoError(format!("Decryption failed: {}", e)))?;
 
     if plaintext.len() != 32 {

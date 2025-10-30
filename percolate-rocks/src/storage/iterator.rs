@@ -2,8 +2,7 @@
 //!
 //! Efficiently iterates over keys with a common prefix.
 
-use rocksdb::{IteratorMode, DB};
-use std::sync::Arc;
+use rocksdb::DB;
 
 /// Iterator for scanning keys with prefix.
 ///

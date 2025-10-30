@@ -37,7 +37,6 @@
 //! // Result: ["rust", "systems", "programming", "language"]
 //! ```
 
-use crate::types::error::Result;
 use std::collections::{HashMap, HashSet};
 
 /// Tokenizer configuration.

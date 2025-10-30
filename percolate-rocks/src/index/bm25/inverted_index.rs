@@ -26,7 +26,7 @@
 //! doc:{doc_id}:length            | u32
 //! ```
 
-use crate::types::error::{DatabaseError, Result};
+use crate::types::error::Result;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 

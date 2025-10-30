@@ -223,9 +223,37 @@ count(kube_pod_status_phase{namespace="percolate-test",phase="Running"})
 | **Database Pod** | Metrics source | Exports metrics via OTEL SDK + Prometheus client |
 | **OTEL Collector** | Metrics pipeline | Receives OTLP, batches, exports to Prometheus + cloud |
 | **Prometheus** | Metrics storage | Stores time-series data, answers PromQL queries |
+| **kube-state-metrics** | K8s metrics | Exposes cluster state metrics (pods, deployments, nodes, etc.) |
 | **KEDA** | Autoscaler | Queries Prometheus, scales pods based on metrics |
 | **Grafana** | Visualization | Queries Prometheus, displays dashboards |
 | **Cloud Backends** | Long-term storage | Receives OTLP for metrics/traces/logs correlation |
+
+### kube-state-metrics Requirement
+
+**IMPORTANT**: kube-state-metrics must be deployed for Grafana dashboards to function correctly.
+
+**Why it's needed:**
+- Provides `kube_pod_info`, `kube_deployment_status_replicas`, and other Kubernetes state metrics
+- Required for pod-level dashboards showing pod counts, node distribution, and AZ topology
+- Essential for multi-AZ topology dashboards
+
+**Deployment:**
+```bash
+# Deploy kube-state-metrics to kube-system namespace
+kubectl apply -f k8s/test-topology/manifests/kube-state-metrics.yaml
+
+# Verify it's running
+kubectl get pods -n kube-system -l app=kube-state-metrics
+
+# Add to Prometheus scrape config
+# See prometheus.yaml for kube-state-metrics job configuration
+```
+
+**Metrics provided:**
+- `kube_pod_info{namespace, pod, node}` - Pod metadata and location
+- `kube_deployment_status_replicas{deployment}` - Deployment replica counts
+- `kube_statefulset_replicas{statefulset}` - StatefulSet replica counts
+- `kube_node_labels{node, label_*}` - Node labels (including topology zones)
 
 ## Production vs Test Differences
 

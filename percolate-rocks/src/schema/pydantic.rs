@@ -2,7 +2,6 @@
 //!
 //! Extracts metadata from `json_schema_extra`.
 
-use crate::types::Result;
 use crate::schema::category::SchemaCategory;
 use serde::{Deserialize, Serialize};
 

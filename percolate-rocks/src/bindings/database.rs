@@ -3,7 +3,7 @@
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyList};
 use crate::database::Database as RustDatabase;
-use crate::types::{Result as RustResult, Entity};
+use crate::types::Entity;
 use std::sync::Arc;
 use std::path::PathBuf;
 

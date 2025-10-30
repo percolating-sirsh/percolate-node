@@ -35,8 +35,7 @@
 //! - k₁ = 1.2 (works well for most text)
 //! - b = 0.75 (balanced length normalization)
 
-use crate::index::bm25::inverted_index::{InvertedIndex, PostingList};
-use crate::types::error::Result;
+use crate::index::bm25::inverted_index::InvertedIndex;
 
 /// BM25 scoring parameters.
 #[derive(Debug, Clone, Copy)]

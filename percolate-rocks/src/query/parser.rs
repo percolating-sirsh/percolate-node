@@ -8,7 +8,7 @@
 //! - LIMIT n
 
 use crate::types::{Result, DatabaseError};
-use sqlparser::ast::{Statement, SelectItem, Expr, TableFactor, BinaryOperator, Value};
+use sqlparser::ast::{Statement, SelectItem, Expr, TableFactor};
 use sqlparser::dialect::GenericDialect;
 use sqlparser::parser::Parser;
 

@@ -1378,7 +1378,7 @@ impl Database {
         query: &str,
         top_k: usize,
     ) -> Result<Vec<(Entity, f32)>> {
-        use crate::embeddings::provider::{EmbeddingProvider, ProviderFactory};
+        use crate::embeddings::provider::ProviderFactory;
         use crate::schema::PydanticSchemaParser;
 
         // 1. Get schema and verify it has embedding_fields configured

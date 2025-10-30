@@ -36,7 +36,7 @@
 //! # }
 //! ```
 
-use crate::otel::{background_span, record_background_metrics, BackgroundJobType};
+use crate::otel::{background_span, BackgroundJobType};
 use anyhow::Result;
 use std::path::{Path, PathBuf};
 

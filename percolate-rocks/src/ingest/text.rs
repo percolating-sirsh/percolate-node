@@ -1,6 +1,5 @@
 //! Text chunking utilities.
 
-use crate::types::Result;
 
 /// Text chunker with smart splitting.
 pub struct TextChunker;
