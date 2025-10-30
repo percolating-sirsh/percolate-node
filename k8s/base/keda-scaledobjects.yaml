@@ -1,0 +1,129 @@
+---
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: api-small-scaler
+  namespace: percolate
+spec:
+  scaleTargetRef:
+    name: api-small
+  minReplicaCount: 0
+  maxReplicaCount: 10
+  cooldownPeriod: 300
+  pollingInterval: 30
+  triggers:
+  - type: prometheus
+    metadata:
+      serverAddress: http://prometheus.observability.svc.cluster.local:9090
+      metricName: percolate_active_tenants
+      threshold: "5"
+      query: |
+        sum(percolate_active_tenants{tier="small"})
+---
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: api-medium-scaler
+  namespace: percolate
+spec:
+  scaleTargetRef:
+    name: api-medium
+  minReplicaCount: 0
+  maxReplicaCount: 20
+  cooldownPeriod: 300
+  pollingInterval: 30
+  triggers:
+  - type: prometheus
+    metadata:
+      serverAddress: http://prometheus.observability.svc.cluster.local:9090
+      metricName: percolate_active_tenants
+      threshold: "10"
+      query: |
+        sum(percolate_active_tenants{tier="medium"})
+---
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: api-large-scaler
+  namespace: percolate
+spec:
+  scaleTargetRef:
+    name: api-large
+  minReplicaCount: 0
+  maxReplicaCount: 30
+  cooldownPeriod: 300
+  pollingInterval: 30
+  triggers:
+  - type: prometheus
+    metadata:
+      serverAddress: http://prometheus.observability.svc.cluster.local:9090
+      metricName: percolate_active_tenants
+      threshold: "20"
+      query: |
+        sum(percolate_active_tenants{tier="large"})
+---
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: worker-small-scaler
+  namespace: percolate
+spec:
+  scaleTargetRef:
+    name: worker-small
+  minReplicaCount: 0
+  maxReplicaCount: 5
+  cooldownPeriod: 600
+  pollingInterval: 30
+  triggers:
+  - type: nats-jetstream
+    metadata:
+      natsServerMonitoringEndpoint: "nats.percolate.svc.cluster.local:8222"
+      account: "percolate"
+      stream: "percolate-jobs-small"
+      consumer: "workers-small"
+      lagThreshold: "5"
+      activationLagThreshold: "1"
+---
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: worker-medium-scaler
+  namespace: percolate
+spec:
+  scaleTargetRef:
+    name: worker-medium
+  minReplicaCount: 0
+  maxReplicaCount: 10
+  cooldownPeriod: 600
+  pollingInterval: 30
+  triggers:
+  - type: nats-jetstream
+    metadata:
+      natsServerMonitoringEndpoint: "nats.percolate.svc.cluster.local:8222"
+      account: "percolate"
+      stream: "percolate-jobs-medium"
+      consumer: "workers-medium"
+      lagThreshold: "5"
+      activationLagThreshold: "1"
+---
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: worker-large-scaler
+  namespace: percolate
+spec:
+  scaleTargetRef:
+    name: worker-large
+  minReplicaCount: 0
+  maxReplicaCount: 15
+  cooldownPeriod: 600
+  pollingInterval: 30
+  triggers:
+  - type: nats-jetstream
+    metadata:
+      natsServerMonitoringEndpoint: "nats.percolate.svc.cluster.local:8222"
+      account: "percolate"
+      stream: "percolate-jobs-large"
+      consumer: "workers-large"
+      lagThreshold: "5"
+      activationLagThreshold: "1"

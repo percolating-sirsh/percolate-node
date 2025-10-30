@@ -1,0 +1,142 @@
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: openbao
+  namespace: percolate
+  labels:
+    app: openbao
+spec:
+  ports:
+  - name: http
+    port: 8200
+    targetPort: 8200
+  - name: cluster
+    port: 8201
+    targetPort: 8201
+  clusterIP: None
+  selector:
+    app: openbao
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: openbao
+  namespace: percolate
+  labels:
+    app: openbao
+spec:
+  serviceName: openbao
+  replicas: 3
+  selector:
+    matchLabels:
+      app: openbao
+  template:
+    metadata:
+      labels:
+        app: openbao
+    spec:
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              labelSelector:
+                matchExpressions:
+                - key: app
+                  operator: In
+                  values:
+                  - openbao
+              topologyKey: kubernetes.io/hostname
+      containers:
+      - name: openbao
+        image: quay.io/openbao/openbao:2.0.0
+        ports:
+        - name: http
+          containerPort: 8200
+        - name: cluster
+          containerPort: 8201
+        env:
+        - name: OPENBAO_ADDR
+          value: "http://127.0.0.1:8200"
+        - name: OPENBAO_API_ADDR
+          value: "http://$(POD_IP):8200"
+        - name: OPENBAO_CLUSTER_ADDR
+          value: "https://$(POD_IP):8201"
+        - name: POD_IP
+          valueFrom:
+            fieldRef:
+              fieldPath: status.podIP
+        args:
+        - server
+        - -config=/openbao/config/config.hcl
+        volumeMounts:
+        - name: config
+          mountPath: /openbao/config
+        - name: data
+          mountPath: /openbao/data
+        resources:
+          requests:
+            cpu: 500m
+            memory: 1Gi
+          limits:
+            cpu: 1000m
+            memory: 2Gi
+        securityContext:
+          readOnlyRootFilesystem: true
+          runAsNonRoot: true
+          runAsUser: 100
+          capabilities:
+            add:
+            - IPC_LOCK
+        livenessProbe:
+          httpGet:
+            path: /v1/sys/health?standbyok=true
+            port: 8200
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /v1/sys/health?standbyok=true&perfstandbyok=true
+            port: 8200
+          initialDelaySeconds: 10
+          periodSeconds: 5
+      volumes:
+      - name: config
+        configMap:
+          name: openbao-config
+  volumeClaimTemplates:
+  - metadata:
+      name: data
+    spec:
+      accessModes:
+      - ReadWriteOnce
+      storageClassName: regional-ssd
+      resources:
+        requests:
+          storage: 10Gi
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: openbao-config
+  namespace: percolate
+data:
+  config.hcl: |
+    storage "raft" {
+      path = "/openbao/data"
+      node_id = "HOSTNAME"
+    }
+
+    listener "tcp" {
+      address = "0.0.0.0:8200"
+      cluster_address = "0.0.0.0:8201"
+      tls_disable = 1
+    }
+
+    api_addr = "http://POD_IP:8200"
+    cluster_addr = "https://POD_IP:8201"
+
+    ui = true
+
+    disable_mlock = false

@@ -1,0 +1,178 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: percolate
+
+# Only deploy small tier for Kind testing
+resources:
+- ../../base
+- ../../overlays/tiers/small
+
+# Use local registry images
+images:
+- name: percolate/percolate
+  newName: localhost:5001/percolate
+  newTag: dev
+- name: percolate/percolate-reading
+  newName: localhost:5001/percolate-reading
+  newTag: dev
+
+# Minimal resources for local testing
+patches:
+# Scale down OpenBao (1 replica, minimal memory)
+- target:
+    kind: StatefulSet
+    name: openbao
+  patch: |-
+    - op: replace
+      path: /spec/replicas
+      value: 1
+    - op: replace
+      path: /spec/template/spec/containers/0/resources/requests/cpu
+      value: "250m"
+    - op: replace
+      path: /spec/template/spec/containers/0/resources/requests/memory
+      value: "256Mi"
+    - op: replace
+      path: /spec/template/spec/containers/0/resources/limits/cpu
+      value: "500m"
+    - op: replace
+      path: /spec/template/spec/containers/0/resources/limits/memory
+      value: "512Mi"
+    - op: replace
+      path: /spec/volumeClaimTemplates/0/spec/resources/requests/storage
+      value: "1Gi"
+    - op: replace
+      path: /spec/volumeClaimTemplates/0/spec/storageClassName
+      value: "standard"
+
+# Scale down NATS (1 replica, minimal memory)
+- target:
+    kind: StatefulSet
+    name: nats
+  patch: |-
+    - op: replace
+      path: /spec/replicas
+      value: 1
+    - op: replace
+      path: /spec/template/spec/containers/0/resources/requests/cpu
+      value: "100m"
+    - op: replace
+      path: /spec/template/spec/containers/0/resources/requests/memory
+      value: "128Mi"
+    - op: replace
+      path: /spec/template/spec/containers/0/resources/limits/cpu
+      value: "250m"
+    - op: replace
+      path: /spec/template/spec/containers/0/resources/limits/memory
+      value: "256Mi"
+
+# Scale down Redis (1 replica, minimal memory)
+- target:
+    kind: Deployment
+    name: redis
+  patch: |-
+    - op: replace
+      path: /spec/replicas
+      value: 1
+    - op: replace
+      path: /spec/template/spec/containers/0/resources/requests/cpu
+      value: "100m"
+    - op: replace
+      path: /spec/template/spec/containers/0/resources/requests/memory
+      value: "128Mi"
+    - op: replace
+      path: /spec/template/spec/containers/0/resources/limits/cpu
+      value: "250m"
+    - op: replace
+      path: /spec/template/spec/containers/0/resources/limits/memory
+      value: "256Mi"
+
+# Scale down Gateway (1 replica, minimal memory)
+- target:
+    kind: Deployment
+    name: gateway
+  patch: |-
+    - op: replace
+      path: /spec/replicas
+      value: 1
+    - op: replace
+      path: /spec/template/spec/containers/0/resources/requests/cpu
+      value: "250m"
+    - op: replace
+      path: /spec/template/spec/containers/0/resources/requests/memory
+      value: "256Mi"
+    - op: replace
+      path: /spec/template/spec/containers/0/resources/limits/cpu
+      value: "500m"
+    - op: replace
+      path: /spec/template/spec/containers/0/resources/limits/memory
+      value: "512Mi"
+
+# API-small: 1 replica, reduced memory
+- target:
+    kind: StatefulSet
+    name: api-small
+  patch: |-
+    - op: replace
+      path: /spec/replicas
+      value: 1
+    - op: replace
+      path: /spec/template/spec/containers/0/resources/requests/cpu
+      value: "500m"
+    - op: replace
+      path: /spec/template/spec/containers/0/resources/requests/memory
+      value: "512Mi"
+    - op: replace
+      path: /spec/template/spec/containers/0/resources/limits/cpu
+      value: "1000m"
+    - op: replace
+      path: /spec/template/spec/containers/0/resources/limits/memory
+      value: "1Gi"
+    - op: replace
+      path: /spec/volumeClaimTemplates/0/spec/resources/requests/storage
+      value: "5Gi"
+    - op: replace
+      path: /spec/volumeClaimTemplates/0/spec/storageClassName
+      value: "standard"
+
+# Worker-small: 0 replicas initially (scale on demand)
+- target:
+    kind: StatefulSet
+    name: worker-small
+  patch: |-
+    - op: replace
+      path: /spec/replicas
+      value: 0
+    - op: replace
+      path: /spec/template/spec/containers/0/resources/requests/cpu
+      value: "1000m"
+    - op: replace
+      path: /spec/template/spec/containers/0/resources/requests/memory
+      value: "1Gi"
+    - op: replace
+      path: /spec/template/spec/containers/0/resources/limits/cpu
+      value: "2000m"
+    - op: replace
+      path: /spec/template/spec/containers/0/resources/limits/memory
+      value: "2Gi"
+    - op: replace
+      path: /spec/volumeClaimTemplates/0/spec/resources/requests/storage
+      value: "5Gi"
+    - op: replace
+      path: /spec/volumeClaimTemplates/0/spec/storageClassName
+      value: "standard"
+
+# Disable KEDA ScaledObjects for Kind (use manual scaling)
+- target:
+    kind: ScaledObject
+  patch: |-
+    - op: replace
+      path: /spec/minReplicaCount
+      value: 0
+    - op: replace
+      path: /spec/maxReplicaCount
+      value: 2
+    - op: replace
+      path: /spec/pollingInterval
+      value: 60

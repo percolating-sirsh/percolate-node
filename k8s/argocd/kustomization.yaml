@@ -1,0 +1,35 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: argocd
+
+resources:
+# Install Argo CD from official upstream manifest
+- https://raw.githubusercontent.com/argoproj/argo-cd/v2.13.2/manifests/install.yaml
+
+# Custom configurations
+- install.yaml
+
+# ApplicationSets for Percolate
+- applicationset.yaml
+
+commonLabels:
+  app.kubernetes.io/part-of: argocd
+
+# Patches for Argo CD server configuration
+patches:
+- target:
+    kind: Deployment
+    name: argocd-server
+  patch: |-
+    - op: add
+      path: /spec/template/spec/containers/0/args/-
+      value: "--insecure"
+
+# ConfigMap generator for custom settings
+configMapGenerator:
+- name: argocd-cm
+  behavior: merge
+  literals:
+  - timeout.reconciliation=180s
+  - application.instanceLabelKey=app.kubernetes.io/instance

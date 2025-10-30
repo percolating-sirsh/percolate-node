@@ -1,0 +1,105 @@
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: api
+  labels:
+    app: api
+spec:
+  ports:
+  - name: http
+    port: 8000
+    targetPort: 8000
+  clusterIP: None
+  selector:
+    app: api
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: api
+  labels:
+    app: api
+spec:
+  serviceName: api
+  replicas: 2
+  selector:
+    matchLabels:
+      app: api
+  template:
+    metadata:
+      labels:
+        app: api
+    spec:
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              labelSelector:
+                matchExpressions:
+                - key: app
+                  operator: In
+                  values:
+                  - api
+              topologyKey: kubernetes.io/hostname
+      containers:
+      - name: api
+        image: percolate/percolate:latest
+        imagePullPolicy: Always
+        ports:
+        - name: http
+          containerPort: 8000
+        env:
+        - name: PERCOLATE_COMPONENT
+          value: "api"
+        - name: REDIS_URL
+          value: "redis://redis.percolate.svc.cluster.local:6379"
+        - name: NATS_URL
+          value: "nats://nats.percolate.svc.cluster.local:4222"
+        - name: OPENBAO_ADDR
+          value: "http://openbao.percolate.svc.cluster.local:8200"
+        - name: ROCKSDB_MODE
+          value: "readonly"
+        - name: ROCKSDB_BLOCK_CACHE_SIZE
+          value: "104857600"  # 100MB
+        - name: TENANT_CACHE_TTL
+          value: "300"  # 5 minutes
+        - name: OTEL_EXPORTER_OTLP_ENDPOINT
+          value: "http://otel-collector.percolate.svc.cluster.local:4317"
+        volumeMounts:
+        - name: data
+          mountPath: /data
+        resources:
+          requests:
+            cpu: 1000m
+            memory: 1Gi
+          limits:
+            cpu: 1000m
+            memory: 1Gi
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /ready
+            port: 8000
+          initialDelaySeconds: 10
+          periodSeconds: 5
+        securityContext:
+          readOnlyRootFilesystem: true
+          runAsNonRoot: true
+          runAsUser: 1000
+  volumeClaimTemplates:
+  - metadata:
+      name: data
+    spec:
+      accessModes:
+      - ReadWriteOnce
+      storageClassName: regional-ssd
+      resources:
+        requests:
+          storage: 50Gi

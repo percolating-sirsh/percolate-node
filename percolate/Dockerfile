@@ -1,4 +1,17 @@
 # =============================================================================
+# Percolate Main API Service
+# =============================================================================
+#
+# Multi-platform build command:
+#   docker buildx build --platform linux/amd64,linux/arm64 \
+#     -t percolate/percolate:latest \
+#     -t percolate/percolate:v0.3.2 \
+#     --push .
+#
+# Single platform build (local testing):
+#   docker build -t percolate/percolate:latest .
+#
+# =============================================================================
 # Builder Stage - Install dependencies with build tools
 # =============================================================================
 FROM python:3.12-slim AS builder

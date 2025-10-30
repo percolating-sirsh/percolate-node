@@ -1006,13 +1006,38 @@ The repository contains three independently versioned projects:
    git push --tags
    ```
 
+### Docker builds
+
+Build multi-platform Docker images (linux/amd64, linux/arm64):
+
+```bash
+# Build both services with version tag
+./scripts/build-docker.sh v0.3.2
+
+# Build locally without pushing
+PUSH=false ./scripts/build-docker.sh latest
+
+# Build individual service
+cd percolate
+docker buildx build --platform linux/amd64,linux/arm64 \
+  -t percolate/percolate:latest \
+  -t percolate/percolate:v0.3.2 \
+  --push .
+```
+
+**Images published to Docker Hub**:
+- `percolate/percolate` - Main API service
+- `percolate/percolate-reading` - Document processing service
+
+See [DOCKER_BUILD.md](DOCKER_BUILD.md) for detailed build instructions.
+
 ### CI/CD workflows
 
 Workflows in `.github/workflows/`:
 
 - `build-rocks.yml` - Build Python wheels for PyPI
-- `build-percolate.yml` - Build Docker images for GHCR
-- `build-reading.yml` - Build Docker images for GHCR
+- `build-percolate.yml` - Build Docker images for Docker Hub
+- `build-reading.yml` - Build Docker images for Docker Hub
 - `release-rocks.yml` - Promote PyPI package, create GitHub release
 - `release-percolate.yml` - Retag Docker images, create GitHub release
 - `release-reading.yml` - Retag Docker images, create GitHub release

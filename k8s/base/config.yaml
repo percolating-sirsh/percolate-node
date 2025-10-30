@@ -1,0 +1,27 @@
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: percolate-config
+  namespace: percolate
+data:
+  # Application configuration
+  log_level: "info"
+
+  # RocksDB defaults (can be overridden per pod)
+  rocksdb_max_open_files: "1000"
+  rocksdb_compression: "lz4"
+
+  # Tenant cache settings
+  tenant_cache_max_size: "25"
+  tenant_cache_ttl_seconds: "300"
+
+  # LLM default settings
+  default_model: "claude-sonnet-4-5-20250929"
+  default_temperature: "0.7"
+  default_max_tokens: "4096"
+
+  # Feature flags
+  enable_device_keys: "true"
+  enable_moments_feed: "true"
+  enable_entity_graph: "true"

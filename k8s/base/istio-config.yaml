@@ -1,0 +1,122 @@
+---
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: percolate-api
+  namespace: percolate
+spec:
+  hosts:
+  - api-small.percolate.svc.cluster.local
+  - api-medium.percolate.svc.cluster.local
+  - api-large.percolate.svc.cluster.local
+  http:
+  - match:
+    - headers:
+        x-tenant-tier:
+          exact: "small"
+    route:
+    - destination:
+        host: api-small.percolate.svc.cluster.local
+        port:
+          number: 8000
+  - match:
+    - headers:
+        x-tenant-tier:
+          exact: "medium"
+    route:
+    - destination:
+        host: api-medium.percolate.svc.cluster.local
+        port:
+          number: 8000
+  - match:
+    - headers:
+        x-tenant-tier:
+          exact: "large"
+    route:
+    - destination:
+        host: api-large.percolate.svc.cluster.local
+        port:
+          number: 8000
+  - route:
+    - destination:
+        host: api-medium.percolate.svc.cluster.local
+        port:
+          number: 8000
+      weight: 70
+    - destination:
+        host: api-small.percolate.svc.cluster.local
+        port:
+          number: 8000
+      weight: 20
+    - destination:
+        host: api-large.percolate.svc.cluster.local
+        port:
+          number: 8000
+      weight: 10
+---
+apiVersion: networking.istio.io/v1beta1
+kind: DestinationRule
+metadata:
+  name: percolate-api
+  namespace: percolate
+spec:
+  host: "*.percolate.svc.cluster.local"
+  trafficPolicy:
+    loadBalancer:
+      consistentHash:
+        httpHeaderName: x-tenant-id
+    connectionPool:
+      tcp:
+        maxConnections: 100
+      http:
+        http1MaxPendingRequests: 50
+        http2MaxRequests: 100
+        maxRequestsPerConnection: 2
+    outlierDetection:
+      consecutiveErrors: 5
+      interval: 30s
+      baseEjectionTime: 30s
+      maxEjectionPercent: 50
+---
+apiVersion: networking.istio.io/v1beta1
+kind: Sidecar
+metadata:
+  name: default
+  namespace: percolate
+spec:
+  egress:
+  - hosts:
+    - "percolate/*"
+    - "istio-system/*"
+---
+apiVersion: security.istio.io/v1beta1
+kind: AuthorizationPolicy
+metadata:
+  name: percolate-authz
+  namespace: percolate
+spec:
+  action: ALLOW
+  rules:
+  - from:
+    - source:
+        principals:
+        - "cluster.local/ns/percolate/sa/gateway"
+    to:
+    - operation:
+        paths:
+        - "/api/*"
+        - "/health"
+        - "/ready"
+  - from:
+    - source:
+        principals:
+        - "cluster.local/ns/percolate/sa/worker"
+    to:
+    - operation:
+        methods:
+        - "GET"
+        - "POST"
+        ports:
+        - "4222"  # NATS
+        - "8200"  # OpenBao
+        - "6379"  # Redis

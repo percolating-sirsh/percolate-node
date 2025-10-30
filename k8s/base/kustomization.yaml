@@ -1,0 +1,19 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: percolate
+
+resources:
+- namespace.yaml
+- config.yaml
+- openbao-statefulset.yaml
+- redis-deployment.yaml
+- nats-statefulset.yaml
+- otel-collector.yaml
+- gateway-deployment.yaml
+- istio-config.yaml
+- keda-scaledobjects.yaml
+
+commonLabels:
+  app.kubernetes.io/part-of: percolate
+  app.kubernetes.io/managed-by: kustomize

@@ -1,0 +1,64 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: percolate
+
+nameSuffix: -large
+
+commonLabels:
+  tier: large
+
+resources:
+- ../../../components/api
+- ../../../components/worker
+
+patches:
+- target:
+    kind: StatefulSet
+    name: api
+  patch: |-
+    - op: replace
+      path: /spec/template/spec/containers/0/resources/requests/cpu
+      value: "4000m"
+    - op: replace
+      path: /spec/template/spec/containers/0/resources/requests/memory
+      value: "4Gi"
+    - op: replace
+      path: /spec/template/spec/containers/0/resources/limits/cpu
+      value: "4000m"
+    - op: replace
+      path: /spec/template/spec/containers/0/resources/limits/memory
+      value: "4Gi"
+    - op: replace
+      path: /spec/volumeClaimTemplates/0/spec/resources/requests/storage
+      value: "200Gi"
+    - op: add
+      path: /spec/template/spec/containers/0/env/-
+      value:
+        name: PERCOLATE_TIER
+        value: "large"
+
+- target:
+    kind: StatefulSet
+    name: worker
+  patch: |-
+    - op: replace
+      path: /spec/template/spec/containers/0/resources/requests/cpu
+      value: "16000m"
+    - op: replace
+      path: /spec/template/spec/containers/0/resources/requests/memory
+      value: "32Gi"
+    - op: replace
+      path: /spec/template/spec/containers/0/resources/limits/cpu
+      value: "16000m"
+    - op: replace
+      path: /spec/template/spec/containers/0/resources/limits/memory
+      value: "32Gi"
+    - op: replace
+      path: /spec/volumeClaimTemplates/0/spec/resources/requests/storage
+      value: "200Gi"
+    - op: add
+      path: /spec/template/spec/containers/0/env/-
+      value:
+        name: PERCOLATE_TIER
+        value: "large"

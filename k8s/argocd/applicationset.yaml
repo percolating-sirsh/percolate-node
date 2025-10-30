@@ -1,0 +1,153 @@
+---
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: percolate-infrastructure
+  namespace: argocd
+spec:
+  generators:
+  - list:
+      elements:
+      - cluster: in-cluster
+        environment: production
+  template:
+    metadata:
+      name: percolate-infra
+      labels:
+        app: percolate
+        component: infrastructure
+    spec:
+      project: default
+      source:
+        repoURL: https://github.com/percolationlabs/percolate
+        targetRevision: main
+        path: k8s/base
+      destination:
+        server: https://kubernetes.default.svc
+        namespace: percolate
+      syncPolicy:
+        automated:
+          prune: true
+          selfHeal: true
+        syncOptions:
+        - CreateNamespace=true
+---
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: percolate-tiers
+  namespace: argocd
+spec:
+  generators:
+  - matrix:
+      generators:
+      - list:
+          elements:
+          - tier: small
+            minReplicas: "0"
+            maxReplicas: "10"
+          - tier: medium
+            minReplicas: "0"
+            maxReplicas: "20"
+          - tier: large
+            minReplicas: "0"
+            maxReplicas: "30"
+      - list:
+          elements:
+          - cluster: in-cluster
+            environment: production
+  template:
+    metadata:
+      name: 'percolate-{{tier}}'
+      labels:
+        app: percolate
+        tier: '{{tier}}'
+    spec:
+      project: default
+      source:
+        repoURL: https://github.com/percolationlabs/percolate
+        targetRevision: main
+        path: 'k8s/overlays/tiers/{{tier}}'
+      destination:
+        server: https://kubernetes.default.svc
+        namespace: percolate
+      syncPolicy:
+        automated:
+          prune: true
+          selfHeal: true
+        syncOptions:
+        - CreateNamespace=true
+      ignoreDifferences:
+      - group: apps
+        kind: StatefulSet
+        jsonPointers:
+        - /spec/replicas
+---
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: percolate-keda-scalers
+  namespace: argocd
+spec:
+  generators:
+  - matrix:
+      generators:
+      - list:
+          elements:
+          - tier: small
+            apiThreshold: "5"
+            workerLag: "5"
+            apiMaxReplicas: "10"
+            workerMaxReplicas: "5"
+          - tier: medium
+            apiThreshold: "10"
+            workerLag: "5"
+            apiMaxReplicas: "20"
+            workerMaxReplicas: "10"
+          - tier: large
+            apiThreshold: "20"
+            workerLag: "5"
+            apiMaxReplicas: "30"
+            workerMaxReplicas: "15"
+      - list:
+          elements:
+          - component: api
+            cooldown: "300"
+          - component: worker
+            cooldown: "600"
+  template:
+    metadata:
+      name: 'percolate-scaler-{{component}}-{{tier}}'
+      labels:
+        app: percolate
+        tier: '{{tier}}'
+        component: '{{component}}'
+    spec:
+      project: default
+      source:
+        repoURL: https://github.com/percolationlabs/percolate
+        targetRevision: main
+        path: k8s/components/keda
+        helm:
+          parameters:
+          - name: tier
+            value: '{{tier}}'
+          - name: component
+            value: '{{component}}'
+          - name: apiThreshold
+            value: '{{apiThreshold}}'
+          - name: workerLag
+            value: '{{workerLag}}'
+          - name: cooldown
+            value: '{{cooldown}}'
+          - name: apiMaxReplicas
+            value: '{{apiMaxReplicas}}'
+          - name: workerMaxReplicas
+            value: '{{workerMaxReplicas}}'
+      destination:
+        server: https://kubernetes.default.svc
+        namespace: percolate
+      syncPolicy:
+        automated:
+          prune: true
+          selfHeal: true

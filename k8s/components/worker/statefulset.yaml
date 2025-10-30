@@ -1,0 +1,97 @@
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: worker
+  labels:
+    app: worker
+spec:
+  ports:
+  - name: metrics
+    port: 9090
+    targetPort: 9090
+  clusterIP: None
+  selector:
+    app: worker
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: worker
+  labels:
+    app: worker
+spec:
+  serviceName: worker
+  replicas: 1
+  selector:
+    matchLabels:
+      app: worker
+  template:
+    metadata:
+      labels:
+        app: worker
+    spec:
+      containers:
+      - name: worker
+        image: percolate/percolate:latest
+        imagePullPolicy: Always
+        env:
+        - name: PERCOLATE_COMPONENT
+          value: "worker"
+        - name: REDIS_URL
+          value: "redis://redis.percolate.svc.cluster.local:6379"
+        - name: NATS_URL
+          value: "nats://nats.percolate.svc.cluster.local:4222"
+        - name: OPENBAO_ADDR
+          value: "http://openbao.percolate.svc.cluster.local:8200"
+        - name: ROCKSDB_MODE
+          value: "readwrite"
+        - name: ROCKSDB_BLOCK_CACHE_SIZE
+          value: "536870912"  # 512MB
+        - name: ROCKSDB_WRITE_BUFFER_SIZE
+          value: "268435456"  # 256MB
+        - name: S3_ENDPOINT
+          valueFrom:
+            secretKeyRef:
+              name: s3-credentials
+              key: endpoint
+        - name: S3_ACCESS_KEY
+          valueFrom:
+            secretKeyRef:
+              name: s3-credentials
+              key: access_key
+        - name: S3_SECRET_KEY
+          valueFrom:
+            secretKeyRef:
+              name: s3-credentials
+              key: secret_key
+        - name: S3_BUCKET_STAGING
+          value: "percolate-staging"
+        - name: S3_BUCKET_DATA
+          value: "percolate-data"
+        - name: OTEL_EXPORTER_OTLP_ENDPOINT
+          value: "http://otel-collector.percolate.svc.cluster.local:4317"
+        volumeMounts:
+        - name: data
+          mountPath: /data
+        resources:
+          requests:
+            cpu: 4000m
+            memory: 8Gi
+          limits:
+            cpu: 4000m
+            memory: 8Gi
+        securityContext:
+          readOnlyRootFilesystem: true
+          runAsNonRoot: true
+          runAsUser: 1000
+  volumeClaimTemplates:
+  - metadata:
+      name: data
+    spec:
+      accessModes:
+      - ReadWriteOnce
+      storageClassName: regional-ssd
+      resources:
+        requests:
+          storage: 50Gi
