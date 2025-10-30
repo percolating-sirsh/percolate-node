@@ -20,6 +20,7 @@
 //! ```
 
 use crate::crypto::TenantKeyPair;
+use crate::otel::{db_span, DbOperation};
 use crate::storage::column_families::CF_KEYS;
 use crate::types::{DatabaseError, Result};
 use rocksdb::{DB, ColumnFamily};
@@ -174,6 +175,8 @@ impl Storage {
     ///
     /// Returns `DatabaseError::StorageError` if RocksDB fails
     pub fn get(&self, cf_name: &str, key: &[u8]) -> Result<Option<Vec<u8>>> {
+        let _span = db_span(DbOperation::Get, Some(cf_name), None).entered();
+
         let cf = self.cf_handle(cf_name);
         self.db
             .get_cf(&cf, key)
@@ -192,6 +195,8 @@ impl Storage {
     ///
     /// Returns `DatabaseError::StorageError` if RocksDB fails
     pub fn put(&self, cf_name: &str, key: &[u8], value: &[u8]) -> Result<()> {
+        let _span = db_span(DbOperation::Put, Some(cf_name), None).entered();
+
         let cf = self.cf_handle(cf_name);
         self.db
             .put_cf(&cf, key, value)
@@ -209,6 +214,8 @@ impl Storage {
     ///
     /// Returns `DatabaseError::StorageError` if RocksDB fails
     pub fn delete(&self, cf_name: &str, key: &[u8]) -> Result<()> {
+        let _span = db_span(DbOperation::Delete, Some(cf_name), None).entered();
+
         let cf = self.cf_handle(cf_name);
         self.db
             .delete_cf(&cf, key)

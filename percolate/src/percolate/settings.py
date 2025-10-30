@@ -5,6 +5,38 @@ from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
+class OTELSettings(BaseSettings):
+    """OpenTelemetry and observability settings."""
+
+    model_config = SettingsConfigDict(
+        env_prefix="OTEL__",
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
+
+    enabled: bool = Field(
+        default=False,
+        description="Enable OpenTelemetry instrumentation (disabled by default for local dev)",
+    )
+
+    phoenix_api_key: str | None = Field(
+        default=None,
+        description="Arize Phoenix API key for cloud instances (used for feedback API only)",
+    )
+
+    phoenix_collector_endpoint: str = Field(
+        default="http://localhost:6006",
+        description="Phoenix API endpoint for feedback annotations (NOT for OTEL traces). "
+        "OTEL traces use standard OTEL_EXPORTER_OTLP_ENDPOINT env var to send to OTEL Collector.",
+    )
+
+    service_name: str = Field(
+        default="percolate-api",
+        description="Service name for traces",
+    )
+
+
 class AuthSettings(BaseSettings):
     """Authentication configuration."""
 
@@ -101,12 +133,14 @@ class Settings(BaseSettings):
     anthropic_api_key: str | None = Field(default=None, description="Anthropic API key")
     openai_api_key: str | None = Field(default=None, description="OpenAI API key")
 
-    # OpenTelemetry
-    otel_enabled: bool = Field(default=False, description="Enable OTEL")
-    otel_endpoint: str = Field(
-        default="http://localhost:4318", description="OTEL collector endpoint"
+    # Project name (for OpenInference)
+    project_name: str = Field(
+        default="percolate",
+        description="Project name for OpenInference tracing (Phoenix project)",
     )
-    otel_service_name: str = Field(default="percolate", description="Service name")
+
+    # OpenTelemetry (nested)
+    otel: "OTELSettings" = Field(default_factory=lambda: OTELSettings())
 
     # Storage
     storage_path: str = Field(default="./data/storage", description="Local storage path")

@@ -2,10 +2,20 @@
 # Percolate Reading Service
 # =============================================================================
 #
-# Multi-platform build command:
+# IMPORTANT: We use TWO registries:
+#   - ghcr.io/percolate/percolate-reading (GitHub Container Registry - CI/CD)
+#   - percolate/percolate-reading (Docker Hub - manual testing/development)
+#
+# Multi-platform build command (Docker Hub):
 #   docker buildx build --platform linux/amd64,linux/arm64 \
 #     -t percolate/percolate-reading:latest \
 #     -t percolate/percolate-reading:v0.3.2 \
+#     --push .
+#
+# Multi-platform build command (GHCR - production):
+#   docker buildx build --platform linux/amd64,linux/arm64 \
+#     -t ghcr.io/percolate/percolate-reading:latest \
+#     -t ghcr.io/percolate/percolate-reading:v0.3.2 \
 #     --push .
 #
 # Single platform build (local testing):

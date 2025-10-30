@@ -505,9 +505,15 @@ This generates 9 applications:
 
 ## Docker image builds
 
-Percolate uses multi-platform Docker images hosted on Docker Hub:
-- `percolate/percolate` - Main API service
-- `percolate/percolate-reading` - Document parsing service
+**IMPORTANT: Dual Registry Strategy**
+
+We use TWO container registries:
+- **ghcr.io/percolate/** - GitHub Container Registry (GHCR) - Used by CI/CD workflows
+- **percolate/** - Docker Hub - Used for manual testing and development
+
+Images:
+- `percolate/percolate` (or `ghcr.io/percolate/percolate`) - Main API service
+- `percolate/percolate-reading` (or `ghcr.io/percolate/percolate-reading`) - Document parsing service
 
 ### Building images
 
@@ -522,18 +528,30 @@ PUSH=false ./scripts/build-docker.sh latest
 
 **Individual service builds**:
 ```bash
-# Build percolate (main API)
+# Build percolate (main API) - Docker Hub
 cd percolate
 docker buildx build --platform linux/amd64,linux/arm64 \
   -t percolate/percolate:latest \
   -t percolate/percolate:v0.3.2 \
   --push .
 
-# Build percolate-reading
+# Build percolate (main API) - GHCR (for CI/CD)
+docker buildx build --platform linux/amd64,linux/arm64 \
+  -t ghcr.io/percolate/percolate:latest \
+  -t ghcr.io/percolate/percolate:v0.3.2 \
+  --push .
+
+# Build percolate-reading - Docker Hub
 cd percolate-reading
 docker buildx build --platform linux/amd64,linux/arm64 \
   -t percolate/percolate-reading:latest \
   -t percolate/percolate-reading:v0.3.2 \
+  --push .
+
+# Build percolate-reading - GHCR (for CI/CD)
+docker buildx build --platform linux/amd64,linux/arm64 \
+  -t ghcr.io/percolate/percolate-reading:latest \
+  -t ghcr.io/percolate/percolate-reading:v0.3.2 \
   --push .
 ```
 

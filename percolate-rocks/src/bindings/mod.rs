@@ -2,6 +2,7 @@
 //!
 //! Thin translation layer between Python and Rust.
 
+use crate::otel::TraceContext;
 use pyo3::prelude::*;
 
 pub mod database;
@@ -31,5 +32,6 @@ pub fn register_module(py: Python, m: &PyModule) -> PyResult<()> {
     m.add_class::<PyWalStatus>()?;
     m.add_class::<PyReplicationStatus>()?;
     m.add_class::<PyQueryPlan>()?;
+    m.add_class::<TraceContext>()?;
     Ok(())
 }

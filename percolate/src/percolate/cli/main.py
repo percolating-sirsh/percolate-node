@@ -14,6 +14,10 @@ from rich.table import Table
 app = typer.Typer(name="percolate", help="Personal AI node CLI")
 console = Console()
 
+# Register subcommands
+from percolate.cli.test_topology import app as test_topology_app
+app.add_typer(test_topology_app, name="test-topology")
+
 
 @app.command()
 def serve(

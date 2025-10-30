@@ -6,6 +6,7 @@
 //! - Embedding generation (batch processing)
 //! - WAL flushes (periodic persistence)
 
+use crate::otel::{background_span, record_background_metrics, BackgroundJobType};
 use crate::types::Result;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -259,7 +260,32 @@ impl BackgroundWorker {
     ///
     /// Task execution result
     async fn execute_task(task: Task) -> Result<TaskResult> {
-        todo!("Implement BackgroundWorker::execute_task")
+        match task {
+            Task::SaveIndex { schema, .. } => {
+                let _span = background_span(BackgroundJobType::IndexSave, &schema).entered();
+                todo!("Implement save index")
+            }
+            Task::LoadIndex { schema, .. } => {
+                let _span = background_span(BackgroundJobType::IndexLoad, &schema).entered();
+                todo!("Implement load index")
+            }
+            Task::GenerateEmbeddings { ref entity_ids, ref schema, .. } => {
+                let _span = background_span(BackgroundJobType::EmbeddingGeneration, schema).entered();
+                record_background_metrics(Some(entity_ids.len()), None, "started");
+                todo!("Implement generate embeddings")
+            }
+            Task::FlushWal => {
+                let _span = background_span(BackgroundJobType::WalFlush, "wal").entered();
+                todo!("Implement WAL flush")
+            }
+            Task::CompactCF { ref cf_name } => {
+                let _span = background_span(BackgroundJobType::Compaction, cf_name).entered();
+                todo!("Implement compaction")
+            }
+            Task::Shutdown => {
+                Ok(TaskResult::Shutdown)
+            }
+        }
     }
 }
 

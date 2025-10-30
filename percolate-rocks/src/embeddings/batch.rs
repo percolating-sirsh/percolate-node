@@ -1,5 +1,6 @@
 //! Batch embedding operations.
 
+use crate::otel::{background_span, record_background_metrics, BackgroundJobType};
 use crate::types::Result;
 use crate::embeddings::provider::EmbeddingProvider;
 use uuid::Uuid;
@@ -53,7 +54,13 @@ impl BatchEmbedder {
     ///
     /// Returns `DatabaseError::EmbeddingError` if embedding fails
     pub async fn embed_batch(&self, texts: &[String]) -> Result<Vec<Vec<f32>>> {
+        let _span = background_span(BackgroundJobType::EmbeddingGeneration, "batch").entered();
+        record_background_metrics(Some(texts.len()), None, "started");
+
         todo!("Implement BatchEmbedder::embed_batch")
+
+        // When implemented:
+        // record_background_metrics(Some(texts.len()), Some(duration_ms), "success");
     }
 
     /// Generate embeddings asynchronously.

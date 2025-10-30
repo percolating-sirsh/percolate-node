@@ -2,6 +2,7 @@
 //!
 //! Provides atomic batch writes across multiple column families.
 
+use crate::otel::{db_span, DbOperation};
 use crate::types::Result;
 use rocksdb::{WriteBatch, DB};
 use std::sync::Arc;
@@ -55,6 +56,7 @@ impl BatchWriter {
     ///
     /// Returns `DatabaseError::StorageError` if commit fails
     pub fn commit(self) -> Result<()> {
+        let _span = db_span(DbOperation::BatchWrite, None, None).entered();
         todo!("Implement BatchWriter::commit")
     }
 

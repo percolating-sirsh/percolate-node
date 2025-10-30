@@ -36,6 +36,7 @@
 //! # }
 //! ```
 
+use crate::otel::{background_span, record_background_metrics, BackgroundJobType};
 use anyhow::Result;
 use std::path::{Path, PathBuf};
 
@@ -98,6 +99,8 @@ impl IndexManager {
     /// # }
     /// ```
     pub async fn rebuild_hnsw_index(&self, _options: Option<IndexRebuildOptions>) -> Result<()> {
+        let _span = background_span(BackgroundJobType::IndexBuild, "hnsw").entered();
+
         todo!(
             "1. Drop existing HNSW index
             2. Scan embeddings CF
@@ -105,6 +108,9 @@ impl IndexManager {
             4. Persist index to disk
             5. Verify index with test queries"
         )
+
+        // When implemented, record metrics like this:
+        // record_background_metrics(Some(vector_count), Some(duration_ms), "success");
     }
 
     /// Rebuild field indexes for all schemas.
@@ -139,6 +145,9 @@ impl IndexManager {
     /// # }
     /// ```
     pub async fn rebuild_field_indexes(&self, _options: IndexRebuildOptions) -> Result<()> {
+        let target = _options.schema_name.as_deref().unwrap_or("all");
+        let _span = background_span(BackgroundJobType::FieldIndexRebuild, target).entered();
+
         todo!(
             "1. Get schema definitions
             2. For each schema (or specified schema):
@@ -147,6 +156,9 @@ impl IndexManager {
                - For each indexed field, create index entries
             3. Verify indexes with test queries"
         )
+
+        // When implemented:
+        // record_background_metrics(Some(entity_count), Some(duration_ms), "success");
     }
 
     /// Rebuild reverse key index.
@@ -172,6 +184,8 @@ impl IndexManager {
     /// # }
     /// ```
     pub async fn rebuild_key_index(&self) -> Result<()> {
+        let _span = background_span(BackgroundJobType::KeyIndexRebuild, "all").entered();
+
         todo!(
             "1. Clear key_index CF
             2. Scan all entities
@@ -180,6 +194,9 @@ impl IndexManager {
                - Create reverse lookup entry in key_index CF
             4. Verify with test lookups"
         )
+
+        // When implemented:
+        // record_background_metrics(Some(entity_count), Some(duration_ms), "success");
     }
 
     /// Rebuild all indexes.

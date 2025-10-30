@@ -96,9 +96,14 @@ jsonschema = "0.18"
 clap = { version = "4", features = ["derive", "env"] }
 shellexpand = "3"
 
-# Logging
+# Observability
 tracing = "0.1"
-tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+tracing-opentelemetry = "0.27"
+opentelemetry = { version = "0.27", features = ["trace"] }
+opentelemetry_sdk = { version = "0.27", features = ["trace", "rt-tokio"] }
+opentelemetry-otlp = { version = "0.27", features = ["trace", "grpc-tonic"] }
+opentelemetry-semantic-conventions = "0.27"
 
 # Performance
 rayon = "1"

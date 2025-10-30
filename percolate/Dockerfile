@@ -2,10 +2,20 @@
 # Percolate Main API Service
 # =============================================================================
 #
-# Multi-platform build command:
+# IMPORTANT: We use TWO registries:
+#   - ghcr.io/percolate/percolate (GitHub Container Registry - CI/CD)
+#   - percolate/percolate (Docker Hub - manual testing/development)
+#
+# Multi-platform build command (Docker Hub):
 #   docker buildx build --platform linux/amd64,linux/arm64 \
 #     -t percolate/percolate:latest \
 #     -t percolate/percolate:v0.3.2 \
+#     --push .
+#
+# Multi-platform build command (GHCR - production):
+#   docker buildx build --platform linux/amd64,linux/arm64 \
+#     -t ghcr.io/percolate/percolate:latest \
+#     -t ghcr.io/percolate/percolate:v0.3.2 \
 #     --push .
 #
 # Single platform build (local testing):

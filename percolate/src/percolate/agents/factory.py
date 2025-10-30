@@ -19,7 +19,11 @@ from pydantic_ai.models import KnownModelName, Model
 from percolate.agents.context import AgentContext
 from percolate.agents.registry import load_agentlet_schema
 from percolate.agents.tool_wrapper import create_pydantic_tool
-from percolate.otel import setup_instrumentation, set_agent_attributes
+from percolate.otel import (
+    set_agent_context_attributes,
+    set_agent_resource_attributes,
+    setup_instrumentation,
+)
 from percolate.settings import settings
 
 
@@ -134,18 +138,17 @@ async def create_agent(
         >>> result = await agent.run("What is percolate?")
     """
     # Initialize OTEL instrumentation if enabled (idempotent)
-    if settings.otel_enabled:
-        setup_instrumentation()
+    setup_instrumentation()
 
     # Load agent schema from context or use override
     agent_schema = agent_schema_override
     if agent_schema is None and context and context.agent_schema_uri:
         # Load from percolate-rocks database or filesystem
         # Database location configured via percolate-rocks settings/env
-        agent_schema = load_agentlet_schema(
-            uri=context.agent_schema_uri,
-            tenant_id=context.tenant_id
-        )
+        agent_schema = load_agentlet_schema(uri=context.agent_schema_uri, tenant_id=context.tenant_id)
+
+    # Set agent resource attributes BEFORE creating agent (propagates to all spans)
+    set_agent_resource_attributes(agent_schema=agent_schema)
 
     # Determine model: override > context.default_model > settings
     model = model_override or (context.default_model if context else settings.default_model)
@@ -169,17 +172,30 @@ async def create_agent(
         final_result_type = _create_model_from_schema(agent_schema)
 
     # Create agent with optional output_type for structured output and tools
+    # Enable OTEL instrumentation on agent (requires instrument=True for Pydantic AI)
     if final_result_type:
         # Wrap the result_type to strip description if needed
-        wrapped_result_type = _create_schema_wrapper(final_result_type, strip_description=strip_model_description)
-        agent = Agent(model=model, system_prompt=system_prompt, output_type=wrapped_result_type, tools=tools)
+        wrapped_result_type = _create_schema_wrapper(
+            final_result_type, strip_description=strip_model_description
+        )
+        agent = Agent(
+            model=model,
+            system_prompt=system_prompt,
+            output_type=wrapped_result_type,
+            tools=tools,
+            instrument=True,  # Enable OTEL instrumentation
+        )
     else:
-        agent = Agent(model=model, system_prompt=system_prompt, tools=tools)
+        agent = Agent(
+            model=model,
+            system_prompt=system_prompt,
+            tools=tools,
+            instrument=True,  # Enable OTEL instrumentation
+        )
 
-    # Set OTEL span attributes for context tracking (if enabled)
-    if settings.otel_enabled:
-        agentlet_name = context.agent_schema_uri if context else None
-        set_agent_attributes(context=context, agentlet_name=agentlet_name)
+    # Set OTEL span attributes for context tracking
+    agentlet_name = context.agent_schema_uri if context else None
+    set_agent_context_attributes(context=context, agentlet_name=agentlet_name, agent_schema=agent_schema)
 
     return agent
 

@@ -48,6 +48,7 @@ pub mod ingest;
 pub mod llm;
 pub mod crypto;
 pub mod dreaming;
+pub mod otel;
 pub mod agents;  // Lightweight agent runtime for background indexing
 
 // High-level database API

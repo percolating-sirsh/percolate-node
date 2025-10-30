@@ -1,0 +1,76 @@
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: test-db
+  namespace: percolate-test
+  labels:
+    app: test-db
+    tier: small
+spec:
+  type: NodePort
+  ports:
+  - name: http
+    port: 8000
+    targetPort: 8000
+    nodePort: 30080
+  selector:
+    app: test-db
+    tier: small
+
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: test-db-small
+  namespace: percolate-test
+spec:
+  serviceName: test-db
+  replicas: 1
+  selector:
+    matchLabels:
+      app: test-db
+      tier: small
+  template:
+    metadata:
+      labels:
+        app: test-db
+        tier: small
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8000"
+        prometheus.io/path: "/metrics"
+    spec:
+      containers:
+      - name: db
+        image: test-db:v2
+        imagePullPolicy: Never
+        ports:
+        - name: http
+          containerPort: 8000
+        env:
+        - name: POD_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        - name: TIER
+          value: "small"
+        resources:
+          requests:
+            cpu: 100m
+            memory: 256Mi
+          limits:
+            cpu: 200m
+            memory: 512Mi
+        readinessProbe:
+          httpGet:
+            path: /ready
+            port: 8000
+          initialDelaySeconds: 5
+          periodSeconds: 5
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          initialDelaySeconds: 10
+          periodSeconds: 10

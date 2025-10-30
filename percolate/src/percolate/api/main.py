@@ -48,6 +48,7 @@ from percolate.api.routers.device import router as device_router
 from percolate.api.routers.health import router as health_router
 from percolate.api.routers.oauth import router as oauth_router
 from percolate.api.routers.oauth_dev import router as oauth_dev_router
+from percolate.api.routers.test_topology import router as test_topology_router
 from percolate.mcplib.server import create_mcp_server
 from percolate.settings import settings
 from percolate.version import __version__
@@ -111,6 +112,7 @@ def create_app() -> FastAPI:
     app.include_router(oauth_dev_router)  # /oauth/dev/* - dev provider (public)
     app.include_router(device_router)     # /device/* - device registration (public)
     app.include_router(chat_router)       # /v1/chat/* - completions and feedback
+    app.include_router(test_topology_router)  # /api/v1/* - test topology endpoints (public)
 
     # Mount MCP server at root (creates /mcp endpoint)
     app.mount("/", mcp_app)
