@@ -1,0 +1,141 @@
+{
+  "name": "ask",
+  "description": "Ask natural language questions about the knowledge base. Automatically routes to appropriate search strategy: SQL for trends, semantic search for documents, entity graph for relationships. More conversational than search_knowledge_base.",
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "question": {
+        "type": "string",
+        "description": "Natural language question. Examples: 'What are recent NCREIF apartment trends?', 'Find all deals related to solar energy', 'Who are the colleagues of Felix Prime?', 'What's the population growth in Austin?'"
+      },
+      "context": {
+        "type": "string",
+        "description": "Optional context to narrow the search. Examples: 'in the last quarter', 'for multifamily deals', 'in Texas markets'",
+        "default": ""
+      },
+      "tenant_id": {
+        "type": "string",
+        "default": "felix-prime",
+        "description": "Tenant scope for multi-tenant deployments"
+      }
+    },
+    "required": ["question"]
+  },
+  "routing_logic": {
+    "description": "The ask tool intelligently routes questions based on intent classification:",
+    "routes": [
+      {
+        "intent": "trend_query",
+        "triggers": ["recent trends", "market data", "NCREIF", "cap rate", "population growth", "PPA rates", "SOFR", "benchmark"],
+        "strategy": "SQL query on trends schema with time series aggregation",
+        "example": "What are recent NCREIF apartment cap rate trends? → SELECT * FROM trends WHERE category='property_benchmark' AND sub_category='Apartment' AND key='cap_rate_pct' ORDER BY date DESC LIMIT 8"
+      },
+      {
+        "intent": "semantic_search",
+        "triggers": ["find documents about", "what does the report say", "content related to", "mentions of"],
+        "strategy": "Vector similarity search on resources (embeddings)",
+        "example": "Find documents about industrial warehouses → Embedding search on resources with query vector"
+      },
+      {
+        "intent": "entity_lookup",
+        "triggers": ["who is", "what is the track record", "sponsor details", "property information"],
+        "strategy": "Entity property search + fuzzy matching",
+        "example": "What is Greenline Renewables' track record? → Lookup entity:sponsor:GRN-001, return properties"
+      },
+      {
+        "intent": "relationship_query",
+        "triggers": ["colleagues of", "deals by", "properties in", "connected to", "related to"],
+        "strategy": "Entity graph traversal",
+        "example": "What deals has Greenline Renewables sponsored? → Traverse edges: sponsor:GRN-001 -[SPONSORS]-> deal:*"
+      },
+      {
+        "intent": "temporal_query",
+        "triggers": ["recent", "last month", "this quarter", "in 2024", "timeline"],
+        "strategy": "Moments temporal index + date filtering",
+        "example": "What deals were analyzed recently? → Query moments with moment_type='deal_analysis' AND date >= NOW() - 30 days"
+      },
+      {
+        "intent": "aggregation_query",
+        "triggers": ["average", "total", "count", "compare", "trend over time"],
+        "strategy": "SQL aggregation on trends or moments",
+        "example": "Compare apartment vs office cap rates → Aggregate trends by property_type, compute statistics"
+      }
+    ]
+  },
+  "examples": [
+    {
+      "description": "Trend query - NCREIF benchmarks",
+      "input": {
+        "question": "What are the latest NCREIF apartment cap rates?"
+      },
+      "expected_route": "trend_query → SQL on trends schema",
+      "response_format": "Latest apartment cap rates: 5.35% (2024-Q3), up from 5.22% (2024-Q1). Trend: rising cap rates indicate price compression."
+    },
+    {
+      "description": "Semantic search - document content",
+      "input": {
+        "question": "Find all documents mentioning solar energy in California"
+      },
+      "expected_route": "semantic_search → Vector search on resources",
+      "response_format": "Found 3 documents: High Mesa Hybrid Energy (solar+storage), California Solar Market Report, Southwest Solar Overview..."
+    },
+    {
+      "description": "Entity lookup",
+      "input": {
+        "question": "What is Greenline Renewables' track record?"
+      },
+      "expected_route": "entity_lookup → Entity property search",
+      "response_format": "Greenline Renewables LLC (sponsor:GRN-001): 2 prior wind projects, 850 MW operational capacity, founded 2016, based in Denver, CO."
+    },
+    {
+      "description": "Relationship traversal",
+      "input": {
+        "question": "What deals has Felix Prime analyzed?"
+      },
+      "expected_route": "relationship_query → Graph traversal",
+      "response_format": "Felix Prime (analyst:FEL-001) analyzed 6 deals: Glenview Industrial Warehouse, Ironwood Office Park, Riverbend Apartments, Oakview Senior Living, Maple Grove Retail, Fairview Plaza Offices."
+    },
+    {
+      "description": "Population growth query",
+      "input": {
+        "question": "What's the population growth in Austin over the last year?"
+      },
+      "expected_route": "trend_query → SQL on trends with date filter",
+      "response_format": "Austin (CBSA 12420) population growth: 2.83% YoY (2024-Q3), down from 3.44% (2024-Q1). Still strongest growth among tracked Sunbelt markets."
+    },
+    {
+      "description": "Recent activity query",
+      "input": {
+        "question": "What office deals were analyzed this quarter?",
+        "context": "in 2024"
+      },
+      "expected_route": "temporal_query → Moments with date filter",
+      "response_format": "2 office deals analyzed in Q3 2024: Ironwood Office Park (alpha score: -6.2, declined), Fairview Plaza Offices (alpha score: -5.8, declined)."
+    },
+    {
+      "description": "Comparison query",
+      "input": {
+        "question": "Compare Wyoming wind PPA rates to offshore wind"
+      },
+      "expected_route": "aggregation_query → Multi-series SQL",
+      "response_format": "Wyoming wind: $23.50/MWh (2024-Q3), Offshore NE wind: $100.50/MWh. Offshore is 4.3x more expensive but has higher capacity factor (40.5% vs 38.5%)."
+    }
+  ],
+  "response_format": {
+    "answer": "Natural language answer to the question",
+    "sources": ["List of sources used (entities, trends, documents)"],
+    "confidence": "high | medium | low",
+    "routing_used": "Which strategy was applied",
+    "related_queries": ["Suggested follow-up questions"]
+  },
+  "notes": [
+    "The ask tool is more intelligent than search_knowledge_base:",
+    "  - Classifies question intent automatically",
+    "  - Routes to optimal search strategy (SQL, vector, graph, temporal)",
+    "  - Returns conversational answers, not just search results",
+    "  - Suggests follow-up questions",
+    "",
+    "Best for: Exploratory questions, analyst workflows, conversational interfaces",
+    "Use search_knowledge_base for: Programmatic queries, specific schema targeting, bulk operations"
+  ]
+}

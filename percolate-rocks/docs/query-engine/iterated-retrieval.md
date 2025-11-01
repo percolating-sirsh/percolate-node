@@ -397,17 +397,27 @@ Next steps are terse, actionable suggestions for subsequent queries:
 
 ## Configuration
 
+**Note:** This document describes the Rust library (`percolate-rocks`) CLI usage. For Python package configuration, see [QUERY_LLM_QUICKSTART.md](QUERY_LLM_QUICKSTART.md).
+
+### Rust Library Configuration
+
 Set default LLM via environment:
 ```bash
-export P8_DEFAULT_LLM=gpt-4-turbo-preview
-export OPENAI_API_KEY=sk-...
+# Rust library (rem CLI)
+export P8_DEFAULT_LLM=cerebras:qwen-3-32b
+export CEREBRAS_API_KEY=csk-...
+export ANTHROPIC_API_KEY=sk-ant-...
 ```
 
 Override in query:
 ```bash
-rem ask "query" --model gpt-3.5-turbo  # Faster, cheaper
-rem ask "query" --model gpt-4          # More accurate
+rem ask "query" --model cerebras:qwen-3-32b   # Faster
+rem ask "query" --model claude-sonnet-4-5-20250929  # More accurate
 ```
+
+**See also:**
+- [QUERY_LLM_QUICKSTART.md](QUERY_LLM_QUICKSTART.md) - Complete LLM configuration guide
+- [README.md](../../README.md) - Full environment variable reference
 
 ## Performance
 
@@ -442,3 +452,19 @@ This transparency helps users understand:
 - Why specific results were returned
 - How many attempts were needed
 - Query confidence and reasoning
+
+## See Also
+
+### Query Engine Documentation
+
+- **[QUERY_LLM_QUICKSTART.md](QUERY_LLM_QUICKSTART.md)** - LLM configuration guide (Cerebras + Claude)
+- **[query-translation-architecture.md](query-translation-architecture.md)** - Query translation design and architecture
+- **[sql-dialect.md](sql-dialect.md)** - Complete REM SQL syntax reference
+- **[advanced-search.md](advanced-search.md)** - Vector search implementation and performance
+
+### Related Topics
+
+- **Multi-stage execution** - This document describes staged query refinement
+- **Schema discovery** - Semantic search over registered schemas
+- **Global key lookup** - Cross-schema entity search with fuzzy matching
+- **Confidence scoring** - LLM confidence levels and explanations

@@ -1,0 +1,222 @@
+{
+  "mcp_resources": {
+    "description": "MCP resources for schema discovery and introspection. Allows clients to discover what data schemas are available and their specifications.",
+    "resources": [
+      {
+        "uri": "schema://list",
+        "name": "List Available Schemas",
+        "description": "Returns list of all available schemas in the REM database with counts and descriptions",
+        "mimeType": "application/json",
+        "response_format": {
+          "schemas": [
+            {
+              "name": "resources",
+              "description": "Document chunks with embeddings for semantic search",
+              "count": 0,
+              "key_pattern": "resource:{tenant_id}:{resource_id}",
+              "supports_search": true,
+              "supports_embedding": true
+            },
+            {
+              "name": "entities",
+              "description": "Structured entities (sponsors, properties, deals, markets, lenders, analysts)",
+              "count": 70,
+              "key_pattern": "entity:{tenant_id}:{entity_id}",
+              "supports_search": true,
+              "supports_embedding": false,
+              "entity_types": ["deal", "sponsor", "property", "market_sector", "lender", "analyst"]
+            },
+            {
+              "name": "moments",
+              "description": "Timestamped events and analyses (deal analysis, entity creation, interactions)",
+              "count": 0,
+              "key_pattern": "moment:{tenant_id}:{timestamp}:{moment_id}",
+              "supports_search": true,
+              "supports_embedding": false
+            },
+            {
+              "name": "trends",
+              "description": "Time series data for benchmarking (NCREIF, CBSA, energy, rates)",
+              "count": 437,
+              "key_pattern": "trend:{tenant_id}:{sub_category}:{key}:{date}",
+              "supports_search": true,
+              "supports_embedding": false,
+              "categories": ["property_benchmark", "market_metric", "energy_price", "interest_rate"]
+            }
+          ]
+        },
+        "example_usage": "GET schema://list → Returns all available schemas with metadata"
+      },
+      {
+        "uri": "schema://spec/resources",
+        "name": "Resource Schema Specification",
+        "description": "Full specification for the resources schema (document chunks)",
+        "mimeType": "application/json",
+        "response_format": {
+          "schema_name": "resources",
+          "description": "Document chunks with embeddings for semantic search",
+          "key_structure": "resource:{tenant_id}:{resource_id}",
+          "fields": {
+            "resource_id": "Unique identifier (UUID)",
+            "content": "Text content of the chunk",
+            "embedding": "Vector embedding (dimension: 1536 for OpenAI, 768 for local)",
+            "metadata": {
+              "source_file": "Original file path",
+              "chunk_index": "Position in document",
+              "total_chunks": "Total chunks in document",
+              "file_type": "PDF, DOCX, MD, etc.",
+              "created_at": "Timestamp"
+            }
+          },
+          "indexes": ["vector_index (HNSW)", "full_text_index"],
+          "search_methods": ["vector_similarity", "full_text", "hybrid"],
+          "ingestion_command": "percolate ingest --file document.pdf --tenant {tenant_id}"
+        }
+      },
+      {
+        "uri": "schema://spec/entities",
+        "name": "Entity Schema Specification",
+        "description": "Full specification for the entities schema",
+        "mimeType": "application/json",
+        "response_format": {
+          "schema_name": "entities",
+          "description": "Structured entities with typed properties and edges",
+          "key_structure": "entity:{tenant_id}:{entity_type}:{entity_id}",
+          "entity_types": {
+            "deal": {
+              "id_pattern": "deal:XXX-NNN",
+              "required_properties": ["deal_name", "asset_class", "transaction_type", "deal_size_usd"],
+              "optional_properties": ["sponsor_id", "property_id", "analyst_id", "status", "alpha_score"],
+              "example": "deal:GLV-001"
+            },
+            "sponsor": {
+              "id_pattern": "sponsor:XXX-NNN",
+              "required_properties": ["name", "location", "track_record"],
+              "optional_properties": ["aliases", "key_people", "asset_classes"],
+              "example": "sponsor:GRN-001"
+            },
+            "property": {
+              "id_pattern": "property:XXX-NNN",
+              "required_properties": ["name", "asset_class", "location"],
+              "optional_properties": ["ncreif_type", "naics_code", "cbsa_code", "size", "occupancy"],
+              "example": "property:GLV-001"
+            }
+          },
+          "edge_types": ["SPONSORS", "ASSET", "FINANCED_BY", "LOCATED_IN", "ANALYZED_BY", "COMPETES_WITH"],
+          "search_methods": ["property_match", "fuzzy_name", "graph_traversal"],
+          "ingestion_command": "percolate ingest --file entities.yaml --schema entities --tenant {tenant_id}"
+        }
+      },
+      {
+        "uri": "schema://spec/moments",
+        "name": "Moment Schema Specification",
+        "description": "Full specification for the moments schema (temporal events)",
+        "mimeType": "application/json",
+        "response_format": {
+          "schema_name": "moments",
+          "description": "Timestamped events and analyses with entity links",
+          "key_structure": "moment:{tenant_id}:{timestamp}:{moment_id}",
+          "fields": {
+            "moment_id": "Unique identifier",
+            "moment_type": "Type of event (deal_analysis, entity_creation, interaction)",
+            "timestamp": "ISO 8601 timestamp",
+            "entities": "List of linked entity IDs",
+            "properties": "Event-specific properties (JSON)",
+            "metadata": "Additional context"
+          },
+          "moment_types": ["deal_analysis", "entity_creation", "customer_inquiry", "document_ingestion"],
+          "indexes": ["temporal_index", "entity_index", "type_index"],
+          "search_methods": ["temporal_range", "entity_lookup", "type_filter"],
+          "creation": "Automatically created during agent execution or via API"
+        }
+      },
+      {
+        "uri": "schema://spec/trends",
+        "name": "Trends Schema Specification",
+        "description": "Full specification for the trends schema (time series data)",
+        "mimeType": "application/json",
+        "response_format": {
+          "schema_name": "trends",
+          "description": "Time series data for benchmarking and market analysis",
+          "key_structure": "trend:{tenant_id}:{sub_category}:{key}:{date}",
+          "unique_constraint": "sub_category + key + date (idempotent upserts)",
+          "fields": {
+            "category": "Filter dimension (property_benchmark, market_metric, energy_price, interest_rate)",
+            "sub_category": "Specific series (Apartment, CBSA-19740, wind-wyoming, SOFR)",
+            "key": "Metric name (cap_rate_pct, population_thousands, ppa_rate_usd_mwh)",
+            "date": "Date of observation (YYYY-MM-DD)",
+            "period_type": "quarter | monthly | daily | annual",
+            "value": "Numeric value (Decimal)",
+            "value_unit": "Unit (percent, dollars, thousands, MW)",
+            "source": "Data source (NCREIF, US Census, ERCOT, Federal Reserve)",
+            "metadata": "Additional context (JSON)"
+          },
+          "categories": {
+            "property_benchmark": {
+              "description": "NCREIF property performance benchmarks",
+              "sub_categories": ["Apartment", "Industrial-Warehouse", "Office", "Retail", "Seniors Housing"],
+              "keys": ["total_return_pct", "cap_rate_pct", "occupancy_pct", "noi_growth_pct"],
+              "source": "NCREIF"
+            },
+            "market_metric": {
+              "description": "CBSA demographic and economic indicators",
+              "sub_categories": ["CBSA-19740", "CBSA-12060", "CBSA-36740", "CBSA-12420", "CBSA-19100"],
+              "keys": ["population_thousands", "population_growth_yoy_pct", "employment_thousands", "gdp_billions"],
+              "source": "US Census Bureau / BLS"
+            },
+            "energy_price": {
+              "description": "Renewable energy PPA rates and metrics",
+              "sub_categories": ["wind-wyoming", "wind-texas", "solar-southwest", "solar-california"],
+              "keys": ["ppa_rate_usd_mwh", "capacity_factor_pct", "merchant_exposure_pct"],
+              "source": "ERCOT / CAISO"
+            },
+            "interest_rate": {
+              "description": "Financial market rates (SOFR, Treasury)",
+              "sub_categories": ["SOFR", "US-Treasury"],
+              "keys": ["overnight_rate_pct", "three_month_rate_pct", "one_year_rate_pct", "ten_year_rate_pct"],
+              "source": "Federal Reserve"
+            }
+          },
+          "indexes": ["category_index", "sub_category_key_index", "temporal_index"],
+          "search_methods": ["time_range", "category_filter", "aggregation"],
+          "ingestion_command": "percolate ingest --file data.csv --schema trends --category {category} --sub-category-field {field} --tenant {tenant_id}"
+        }
+      }
+    ]
+  },
+  "usage_examples": [
+    {
+      "scenario": "Discover what schemas are available",
+      "mcp_call": "GET schema://list",
+      "response": "Returns list of 4 schemas: resources, entities, moments, trends with counts and descriptions"
+    },
+    {
+      "scenario": "Get full specification for trends schema",
+      "mcp_call": "GET schema://spec/trends",
+      "response": "Returns complete schema definition including categories, keys, ingestion commands"
+    },
+    {
+      "scenario": "Search specific schema after discovery",
+      "workflow": [
+        "1. GET schema://list → Discover 'trends' schema exists",
+        "2. GET schema://spec/trends → Learn about categories and keys",
+        "3. CALL search_knowledge_base(query='apartment cap rates', schema='trends', filters={category: 'property_benchmark'})"
+      ]
+    },
+    {
+      "scenario": "Natural language query with schema routing",
+      "workflow": [
+        "1. CALL ask(question='What are recent NCREIF apartment trends?')",
+        "2. System routes to trends schema automatically",
+        "3. Returns conversational answer with sources"
+      ]
+    }
+  ],
+  "implementation_notes": [
+    "Schema resources are read-only (GET only)",
+    "Schema list is dynamically generated from database introspection",
+    "Custom schemas can be registered and will appear in schema://list",
+    "Schema specifications follow JSON Schema format for validation",
+    "MCP clients can cache schema://spec responses for performance"
+  ]
+}

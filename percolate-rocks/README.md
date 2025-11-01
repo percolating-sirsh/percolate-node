@@ -57,6 +57,93 @@ cargo test --lib --no-default-features
 # percolate-rocks = { version = "0.1", default-features = false }
 ```
 
+### Development Workflow: Using Local percolate-rocks in percolate Project
+
+When developing features that span both `percolate-rocks` (this Rust extension) and `percolate` (the main Python project), you need to install the local development version instead of the PyPI release.
+
+**Project Structure:**
+```
+percolation/
+├── percolate-rocks/         # This project (Rust + PyO3)
+│   ├── src/                 # Rust source code
+│   ├── python/rem_db/       # Python package with Pydantic models
+│   └── Cargo.toml
+└── percolate/               # Main project (Python)
+    ├── src/percolate/       # Python source
+    ├── pyproject.toml       # Depends on: percolate-rocks>=0.3.2
+    └── .venv/               # Virtual environment
+```
+
+**Method 1: Install from percolate-rocks directory** (recommended):
+```bash
+cd /Users/sirsh/code/percolation/percolate-rocks
+
+# Install into percolate's venv
+uv run --project ../percolate maturin develop
+
+# Or using uv pip directly
+cd ../percolate
+uv pip install -e ../percolate-rocks
+```
+
+**Method 2: Use path dependency** (permanent):
+```toml
+# In percolate/pyproject.toml
+dependencies = [
+    # Comment out PyPI version:
+    # "percolate-rocks>=0.3.2",
+
+    # Use local development version:
+    "percolate-rocks @ file:///Users/sirsh/code/percolation/percolate-rocks",
+]
+```
+
+**Verify which version is installed:**
+```bash
+cd percolate
+uv run python -c "import rem_db; print(rem_db.__file__)"
+
+# PyPI version shows: .venv/lib/python3.13/site-packages/rem_db/__init__.py
+# Dev version shows: ../percolate-rocks/python/rem_db/__init__.py
+```
+
+**Development workflow:**
+```bash
+# 1. Make changes in percolate-rocks/src/*.rs
+vim percolate-rocks/src/embeddings/provider.rs
+
+# 2. Rebuild and install into percolate venv
+cd percolate-rocks
+uv run --project ../percolate maturin develop
+
+# 3. Test changes in percolate
+cd ../percolate
+uv run python test_something.py
+
+# 4. Iterate quickly (rebuild is ~5-15 seconds with Cargo caching)
+```
+
+**Why this is needed:**
+- `percolate` depends on `percolate-rocks` from PyPI (v0.3.2)
+- When you change Rust code, you need to rebuild the extension
+- `maturin develop` builds and installs the extension in editable mode
+- Using `--project ../percolate` tells maturin to use percolate's venv, not percolate-rocks' venv
+
+**Common pitfalls:**
+```bash
+# ❌ Wrong - builds into percolate-rocks/.venv
+cd percolate-rocks
+maturin develop
+
+# ❌ Wrong - uv run uses current directory's venv
+cd percolate
+uv run maturin develop -m ../percolate-rocks/Cargo.toml
+
+# ✅ Correct - explicitly target percolate's venv
+cd percolate-rocks
+uv run --project ../percolate maturin develop
+```
+
 ### Testing cross-compilation locally
 
 To ensure your local builds will work in CI/GitHub Actions, use Docker to replicate the CI environment:
@@ -139,6 +226,60 @@ rem search "fast programming languages" --schema=articles --top-k=5
 # 6. SQL queries (indexed)
 rem query "SELECT * FROM articles WHERE category = 'programming'"
 ```
+
+### Python API (Recommended for Applications)
+
+For Python applications, use the `rem_db` package directly:
+
+```python
+from rem_db import Database
+
+# Initialize database (uses P8_DB_PATH or ~/.p8/db by default)
+db = Database()
+
+# Batch insert (efficient, single atomic operation)
+articles = [
+    {"name": "Python Guide", "content": "...", "category": "programming"},
+    {"name": "Rust Guide", "content": "...", "category": "programming"},
+]
+ids = db.insert_batch("articles", articles)  # Returns list of UUIDs
+
+# Batch get (retrieve multiple by ID)
+entities = db.get_batch(ids[:5])  # Get first 5
+
+# Batch lookup (find by natural keys)
+results = db.lookup_batch(["Python Guide", "Rust Guide"])
+
+# SQL query
+results = db.query("SELECT * FROM articles WHERE category = 'programming'")
+
+# Single operations (available but batch is faster)
+single_id = db.insert("articles", {"name": "New Article", "content": "..."})
+single_entity = db.get(single_id)
+```
+
+**Performance tip:** Always use batch operations (`insert_batch`, `get_batch`, `lookup_batch`) for bulk data - they're 7-10x faster than individual operations, and 50-100x faster with embeddings enabled.
+
+### Try It: Quickstart Example
+
+We've included a complete quickstart example with sample data in `test/data/`:
+
+```bash
+# Navigate to test data directory
+cd percolate-rocks/test/data
+
+# Run the quickstart example
+python quickstart_example.py
+```
+
+This example demonstrates:
+- Loading data from JSONL files
+- Batch insert operations
+- Batch get and lookup
+- SQL queries
+- Performance comparisons
+
+See [test/data/README.md](test/data/README.md) for more details and how to create your own test data.
 
 ## CLI Commands
 
@@ -598,8 +739,14 @@ export P8_DEFAULT_EMBEDDING=local:all-MiniLM-L6-v2
 export P8_OPENAI_API_KEY=sk-...  # For OpenAI embeddings
 
 # LLM (natural language queries)
-export P8_DEFAULT_LLM=gpt-4.1
-export P8_OPENAI_API_KEY=sk-...
+# Note: These are for Rust-based query planner (Database.plan_query())
+export ANTHROPIC_API_KEY=sk-ant-...
+export CEREBRAS_API_KEY=csk-...
+export P8_DEFAULT_LLM=claude-sonnet-4-5-20250929  # Default provider
+
+# For Python-based tools (percolate package)
+export PERCOLATE_DEFAULT_MODEL=anthropic:claude-sonnet-4-5-20250929  # General purpose
+export PERCOLATE_QUERY_MODEL=cerebras:qwen-3-32b                     # Fast query planning (2400 tok/s)
 
 # RocksDB tuning
 export P8_ROCKSDB_WRITE_BUFFER_SIZE=67108864  # 64MB
@@ -612,7 +759,18 @@ export P8_PRIMARY_HOST=localhost:50051  # For replicas
 export P8_WAL_ENABLED=true
 ```
 
-See [CLAUDE.md](./CLAUDE.md) for full list.
+**LLM Configuration Guide:**
+
+For detailed LLM setup (Cerebras + Claude configuration, performance benchmarks, troubleshooting):
+- See **[docs/query-engine/](docs/query-engine/)** - Complete query engine documentation including:
+  - **[QUERY_LLM_QUICKSTART.md](docs/query-engine/QUERY_LLM_QUICKSTART.md)** - LLM configuration guide
+  - Cerebras strict JSON schema requirements
+  - Claude vs Cerebras comparison
+  - Performance benchmarks (Cerebras: 2400 tok/s, ~500ms query planning)
+  - Environment variable patterns
+  - Debugging guide
+
+See [CLAUDE.md](./CLAUDE.md) for full environment variable reference.
 
 ## Project Structure
 

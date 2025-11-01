@@ -91,7 +91,7 @@ async def paginated_request(
     if len(chunks) == 1:
         logger.info("Single chunk, executing directly")
         result = await agent.run(chunks[0])
-        return result.data
+        return result.output
 
     # Execute chunks
     if config.parallel:
@@ -129,7 +129,7 @@ async def _execute_chunk(
     logger.debug(f"Executing chunk {chunk_index + 1}/{total_chunks}")
     result = await agent.run(chunk_input)
     logger.debug(f"Completed chunk {chunk_index + 1}/{total_chunks}")
-    return result.data
+    return result.output
 
 
 def _merge_results(

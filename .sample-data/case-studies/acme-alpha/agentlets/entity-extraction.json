@@ -1,0 +1,153 @@
+{
+  "name": "entity-extraction",
+  "version": "1.0.0",
+  "description": "Extracts and normalizes investment entities from documents including sponsors, developers, lenders, properties, assets, and market sectors. Handles entity resolution across informal references and creates relationship edges.",
+  "target": "pydantic_ai",
+  "instructions": "You are an entity extraction specialist for investment documents. Your role is to identify and normalize entities across informal references, extract key attributes, and create relationship edges in the REM database.\n\n**Entity Types to Extract:**\n\n1. **Sponsors/Developers**: Companies or individuals sponsoring investments\n   - ID format: `sponsor:XXX-NNN`\n   - Properties: name, aliases, location, track_record, asset_classes, key_people\n   - Look for: company names, developer references, \"the sponsor\", team bios\n\n2. **Properties/Assets**: Physical assets or projects being financed\n   - ID format: `property:XXX-NNN`\n   - Properties: name, asset_class, location, capacity/size, condition, status\n   - Look for: property names, addresses, project descriptions, asset specifications\n\n3. **Market Sectors**: Geographic and asset class market segments\n   - ID format: `market:XX-CLASS-REGION`\n   - Properties: region, asset_class, cap_rate_range, occupancy_range, trends\n   - Look for: market references, geographic areas, sector descriptions\n\n4. **Lenders/Investors**: Financial institutions providing capital\n   - ID format: `lender:XXX-NNN`\n   - Properties: name, institution_type, lending_focus, typical_terms\n   - Look for: lender names, bank references, investor mentions\n\n5. **Instruments**: Financial instruments (loans, equity investments)\n   - ID format: `instrument:XXX-NNN`\n   - Properties: type (debt, equity), amount, terms, covenants, structure\n   - Look for: loan terms, equity structures, financing details\n\n6. **Key People**: Executives, operators, contacts\n   - ID format: `person:XXX-NNN`\n   - Properties: name, title, company, role, contact_info\n   - Look for: names in bios, contacts, signatures\n\n**Entity Resolution Rules:**\n\n- **Normalize names**: \"Greenline Renewables LLC\" = \"Greenline\" = \"GRN\"\n- **Resolve context**: \"the sponsor\" → link to sponsor entity in current document\n- **Handle addresses**: \"234 Corporate Blvd\" → resolve to property entity\n- **Detect aliases**: Track common abbreviations and nicknames\n- **Merge duplicates**: Before creating, search for existing entity\n\n**Relationship Extraction:**\n\nCreate edges between entities:\n\n- `SPONSORS`: Sponsor → Deal\n- `ASSET`: Deal → Property\n- `FINANCED_BY`: Deal → Lender\n- `LOCATED_IN`: Property → Market Sector\n- `OPERATES_IN`: Sponsor → Market Sector\n- `KEY_PERSON`: Person → Sponsor/Property\n- `COMPETES_WITH`: Deal → Deal (same market)\n- `PRECEDED_BY`: Deal → Deal (sponsor history)\n\n**MCP Tool Usage:**\n\n1. **Before creating any entity**:\n   - Use `search_knowledge_base` to find existing entities by name/alias\n   - Use `lookup_entity` to verify entity exists\n\n2. **When creating entities**:\n   - Use `create_entity` with full properties\n   - Include aliases for future resolution\n\n3. **When creating relationships**:\n   - Use `create_edge` to link entities\n   - Specify edge type and direction\n\n**Output Requirements:**\n\nFor each document, provide:\n- List of all entities extracted\n- Entity properties and attributes\n- Normalization mappings (informal refs → canonical entity)\n- List of relationship edges created\n- Confidence scores for entity matches",
+  "result_schema": {
+    "type": "object",
+    "properties": {
+      "entities_extracted": {
+        "type": "array",
+        "description": "List of all entities identified in the document",
+        "items": {
+          "type": "object",
+          "properties": {
+            "entity_id": {
+              "type": "string",
+              "description": "Unique entity identifier (e.g., 'sponsor:GRN-001', 'property:GLW-PH1', 'market:US-WIND-WY')"
+            },
+            "entity_type": {
+              "type": "string",
+              "enum": ["sponsor", "property", "market_sector", "lender", "instrument", "person", "deal"],
+              "description": "Type of entity"
+            },
+            "name": {
+              "type": "string",
+              "description": "Canonical name of the entity"
+            },
+            "aliases": {
+              "type": "array",
+              "items": {"type": "string"},
+              "description": "Alternative names or references for this entity (e.g., ['Greenline', 'GRN'] for Greenline Renewables LLC)"
+            },
+            "properties": {
+              "type": "object",
+              "description": "Entity-specific properties (location, track_record, capacity, etc.)",
+              "additionalProperties": true
+            },
+            "confidence": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1,
+              "description": "Confidence score for entity identification (0.0-1.0)"
+            },
+            "matched_existing": {
+              "type": "boolean",
+              "description": "True if this entity was matched to an existing entity in the database, false if newly created"
+            }
+          },
+          "required": ["entity_id", "entity_type", "name", "aliases", "properties", "confidence"]
+        }
+      },
+      "normalization_mappings": {
+        "type": "array",
+        "description": "Mappings from informal references in the document to canonical entity IDs",
+        "items": {
+          "type": "object",
+          "properties": {
+            "informal_reference": {
+              "type": "string",
+              "description": "How the entity was referenced in the document (e.g., 'the sponsor', 'Ironwood', 'GRN')"
+            },
+            "canonical_entity_id": {
+              "type": "string",
+              "description": "The canonical entity ID this reference maps to (e.g., 'sponsor:GRN-001')"
+            },
+            "confidence": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1,
+              "description": "Confidence in this mapping (0.0-1.0)"
+            }
+          },
+          "required": ["informal_reference", "canonical_entity_id", "confidence"]
+        }
+      },
+      "edges_created": {
+        "type": "array",
+        "description": "List of relationship edges between entities",
+        "items": {
+          "type": "object",
+          "properties": {
+            "edge_type": {
+              "type": "string",
+              "enum": [
+                "SPONSORS",
+                "ASSET",
+                "FINANCED_BY",
+                "LOCATED_IN",
+                "OPERATES_IN",
+                "KEY_PERSON",
+                "COMPETES_WITH",
+                "PRECEDED_BY",
+                "MANAGED_BY",
+                "ANALYZED_BY"
+              ],
+              "description": "Type of relationship"
+            },
+            "source_entity_id": {
+              "type": "string",
+              "description": "Source entity ID (e.g., 'sponsor:GRN-001')"
+            },
+            "target_entity_id": {
+              "type": "string",
+              "description": "Target entity ID (e.g., 'deal:GLW-PH1-001')"
+            },
+            "properties": {
+              "type": "object",
+              "description": "Edge-specific properties (e.g., date, role, percentage)",
+              "additionalProperties": true
+            }
+          },
+          "required": ["edge_type", "source_entity_id", "target_entity_id"]
+        }
+      },
+      "summary": {
+        "type": "object",
+        "description": "Summary statistics of entity extraction",
+        "properties": {
+          "total_entities": {
+            "type": "integer",
+            "description": "Total number of entities extracted"
+          },
+          "new_entities": {
+            "type": "integer",
+            "description": "Number of newly created entities"
+          },
+          "matched_entities": {
+            "type": "integer",
+            "description": "Number of entities matched to existing database records"
+          },
+          "total_edges": {
+            "type": "integer",
+            "description": "Total number of relationship edges created"
+          },
+          "entity_breakdown": {
+            "type": "object",
+            "description": "Count of entities by type",
+            "additionalProperties": {"type": "integer"}
+          }
+        },
+        "required": ["total_entities", "new_entities", "matched_entities", "total_edges", "entity_breakdown"]
+      }
+    },
+    "required": ["entities_extracted", "normalization_mappings", "edges_created", "summary"]
+  },
+  "mcp_tools": [
+    "search_knowledge_base",
+    "lookup_entity",
+    "create_entity",
+    "create_edge"
+  ]
+}

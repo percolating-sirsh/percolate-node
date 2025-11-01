@@ -1,0 +1,639 @@
+# ACME Alpha - Investment Entity Ground Truth
+# This file defines the canonical entities in Felix Prime's investment universe
+#
+# INDUSTRY CLASSIFICATION STANDARDS USED:
+# - NCREIF: Property type classifications (Apartment, Industrial-Warehouse, Office, Retail, Seniors Housing, Self-Storage)
+# - NAICS: North American Industry Classification System (6-digit codes)
+#   * 221114: Solar Electric Power Generation
+#   * 221115: Wind Electric Power Generation
+#   * 531110: Lessors of Residential Buildings and Dwellings
+#   * 531120: Lessors of Nonresidential Buildings (office, industrial, retail)
+#   * 531130: Lessors of Miniwarehouses and Self-Storage Units
+# - CBSA: Core-Based Statistical Area codes (US Census/OMB metropolitan areas)
+# - CFI: Classification of Financial Instruments (ISO 10962)
+#   * DXXXXX: Debt instruments
+#   * EPXXXX: Preferred equity
+#   * ESXXXX: Common equity
+
+analysts:
+  - analyst_id: "analyst:FEL-001"
+    name: "Felix Prime"
+    title: "Senior Asset Manager"
+    firm: "ACME Capital Partners"
+    location: "New York, NY"
+    email: "felix.prime@acmecapital.com"
+    phone: "+1 212 555 0101"
+    focus_areas: ["Real Estate", "Energy Infrastructure", "Private Credit"]
+    aum_managed: "$450M"
+
+  - analyst_id: "analyst:SAR-001"
+    name: "Sarah Chen"
+    title: "Associate"
+    firm: "ACME Capital Partners"
+    location: "New York, NY"
+    email: "sarah.chen@acmecapital.com"
+    focus_areas: ["Multifamily", "Industrial", "Credit"]
+
+  - analyst_id: "analyst:MIC-001"
+    name: "Michael Torres"
+    title: "Principal"
+    firm: "ACME Capital Partners"
+    location: "New York, NY"
+    email: "michael.torres@acmecapital.com"
+    focus_areas: ["Renewable Energy", "Infrastructure"]
+
+sponsors:
+  - sponsor_id: "sponsor:GRN-001"
+    name: "Greenline Renewables LLC"
+    aliases: ["Greenline", "GRN"]
+    location: "Denver, CO"
+    founded: 2016
+    key_people: ["David Morrison (CEO)", "Lisa Chang (CFO)"]
+    track_record: "2 prior wind projects, 850 MW operational"
+    asset_classes: ["Wind Energy", "Solar Energy"]
+    total_portfolio: "1,200 MW renewable capacity"
+
+  - sponsor_id: "sponsor:HRZ-001"
+    name: "Horizon Industrial Partners"
+    aliases: ["Horizon Industrial", "HIP", "Horizon"]
+    location: "Chicago, IL"
+    founded: 2012
+    key_people: ["Robert Hoffman (Managing Partner)"]
+    track_record: "15 industrial properties, $680M deployed"
+    asset_classes: ["Industrial Real Estate", "Logistics"]
+
+  - sponsor_id: "sponsor:RBD-001"
+    name: "Riverbend Capital Management"
+    aliases: ["Riverbend", "RBD Capital"]
+    location: "Austin, TX"
+    founded: 2014
+    key_people: ["Jennifer Martinez (Founder)", "Carlos Ruiz (COO)"]
+    track_record: "8 multifamily properties, 2,400 units"
+    asset_classes: ["Multifamily"]
+
+  - sponsor_id: "sponsor:OKV-001"
+    name: "Oakview Healthcare REIT"
+    aliases: ["Oakview", "Oakview REIT"]
+    location: "Boston, MA"
+    founded: 2008
+    key_people: ["Dr. Patricia Williams (CEO)"]
+    track_record: "12 senior living facilities, $420M AUM"
+    asset_classes: ["Senior Living", "Healthcare"]
+
+  - sponsor_id: "sponsor:NTG-001"
+    name: "Northgate Logistics Group"
+    aliases: ["Northgate", "NLG"]
+    location: "Seattle, WA"
+    founded: 2015
+    key_people: ["Thomas Anderson (CEO)"]
+    track_record: "7 logistics centers, 3.2M SF"
+    asset_classes: ["Logistics", "Industrial"]
+
+  - sponsor_id: "sponsor:MPL-001"
+    name: "Maple Properties LLC"
+    aliases: ["Maple", "MPL"]
+    location: "Dallas, TX"
+    founded: 2011
+    key_people: ["Sandra Lee (Principal)"]
+    track_record: "9 retail properties, mixed performance"
+    asset_classes: ["Retail", "Mixed Use"]
+
+  - sponsor_id: "sponsor:HME-001"
+    name: "High Mesa Energy Partners"
+    aliases: ["High Mesa", "HMEP"]
+    location: "Phoenix, AZ"
+    founded: 2017
+    key_people: ["James Crawford (CEO)", "Maria Gonzalez (CTO)"]
+    track_record: "3 hybrid renewable projects, 450 MW"
+    asset_classes: ["Solar + Storage", "Hybrid Energy"]
+
+  - sponsor_id: "sponsor:BLH-001"
+    name: "Blue Harbor Renewables"
+    aliases: ["Blue Harbor", "BHR"]
+    location: "Portland, ME"
+    founded: 2013
+    key_people: ["William Jensen (Founder)"]
+    track_record: "5 offshore wind projects, 1,100 MW operational"
+    asset_classes: ["Wind Energy", "Offshore Wind"]
+
+  - sponsor_id: "sponsor:FVW-001"
+    name: "Fairview Office Properties"
+    aliases: ["Fairview", "FVW Properties"]
+    location: "Atlanta, GA"
+    founded: 2009
+    key_people: ["Daniel Parker (Managing Director)"]
+    track_record: "11 suburban office parks, 1.8M SF"
+    asset_classes: ["Office Real Estate"]
+
+  - sponsor_id: "sponsor:SMT-001"
+    name: "Summit Ridge Development"
+    aliases: ["Summit Ridge", "SRD"]
+    location: "Charlotte, NC"
+    founded: 2010
+    key_people: ["Katherine Brooks (CEO)"]
+    track_record: "14 multifamily properties, 3,800 units"
+    asset_classes: ["Multifamily", "Mixed Use"]
+
+properties:
+  - property_id: "property:GLV-001"
+    name: "Glenview Industrial Warehouse"
+    asset_class: "Industrial Real Estate"
+    ncreif_type: "Industrial-Warehouse"
+    naics_code: "531120"
+    location: "Columbus, OH"
+    cbsa_code: "18140"  # Columbus, OH MSA
+    size: "285,000 SF"
+    condition: "Class A, built 2019"
+    occupancy: "92%"
+
+  - property_id: "property:GLW-PH1"
+    name: "Greenline Wind Phase I"
+    asset_class: "Wind Energy"
+    naics_code: "221115"  # Wind Electric Power Generation
+    location: "Laramie County, WY"
+    cbsa_code: "16940"  # Cheyenne, WY MSA
+    capacity: "200 MW"
+    status: "Under construction"
+    ppa_status: "80% contracted"
+
+  - property_id: "property:IRW-001"
+    name: "Ironwood Office Park"
+    asset_class: "Office Real Estate"
+    ncreif_type: "Office"
+    naics_code: "531120"
+    location: "Suburban Denver, CO"
+    cbsa_code: "19740"  # Denver-Aurora-Lakewood, CO MSA
+    size: "420,000 SF"
+    condition: "Class B, built 1998, renovated 2018"
+    occupancy: "47% (mid-renovation)"
+
+  - property_id: "property:RBD-APT"
+    name: "Riverbend Apartments"
+    asset_class: "Multifamily"
+    ncreif_type: "Apartment"
+    naics_code: "531110"
+    location: "Austin, TX"
+    cbsa_code: "12420"  # Austin-Round Rock, TX MSA
+    units: 324
+    condition: "Class B+, built 2008"
+    occupancy: "88%"
+
+  - property_id: "property:HRZ-IND"
+    name: "Horizon Industrial Center"
+    asset_class: "Industrial Real Estate"
+    ncreif_type: "Industrial-Warehouse"
+    naics_code: "531120"
+    location: "Indianapolis, IN"
+    cbsa_code: "26900"  # Indianapolis-Carmel-Anderson, IN MSA
+    size: "410,000 SF"
+    condition: "Class B, built 2012"
+    occupancy: "94%"
+
+  - property_id: "property:OKV-SLF"
+    name: "Oakview Senior Living Facility"
+    asset_class: "Senior Living"
+    ncreif_type: "Seniors Housing"
+    naics_code: "531110"
+    location: "Boca Raton, FL"
+    cbsa_code: "33100"  # Miami-Fort Lauderdale-West Palm Beach, FL MSA
+    units: 156
+    unit_mix: "90 independent, 66 assisted"
+    occupancy: "89%"
+
+  - property_id: "property:NTG-LOG"
+    name: "Northgate Logistics Expansion"
+    asset_class: "Logistics"
+    ncreif_type: "Industrial-Warehouse"
+    naics_code: "531120"
+    location: "Tacoma, WA"
+    cbsa_code: "42660"  # Seattle-Tacoma-Bellevue, WA MSA
+    size: "650,000 SF expansion to existing 1.2M SF"
+    status: "Planning phase"
+
+  - property_id: "property:MPL-RET"
+    name: "Maple Grove Retail Plaza"
+    asset_class: "Retail"
+    ncreif_type: "Retail"
+    naics_code: "531120"
+    location: "Dallas, TX"
+    cbsa_code: "19100"  # Dallas-Fort Worth-Arlington, TX MSA
+    size: "145,000 SF"
+    condition: "Class B, built 2005"
+    occupancy: "73%"
+
+  - property_id: "property:HME-HYB"
+    name: "High Mesa Hybrid Energy Project"
+    asset_class: "Solar + Battery Storage"
+    naics_code: "221114"  # Solar Electric Power Generation
+    location: "Maricopa County, AZ"
+    cbsa_code: "38060"  # Phoenix-Mesa-Scottsdale, AZ MSA
+    capacity: "150 MW solar + 50 MW / 200 MWh storage"
+    status: "Development phase"
+
+  - property_id: "property:LKS-APT"
+    name: "Lakeside Manor Apartments"
+    asset_class: "Multifamily"
+    ncreif_type: "Apartment"
+    naics_code: "531110"
+    location: "Orlando, FL"
+    cbsa_code: "36740"  # Orlando-Kissimmee-Sanford, FL MSA
+    units: 288
+    condition: "Class A, built 2021"
+    occupancy: "96%"
+
+  - property_id: "property:BLH-W3"
+    name: "Blue Harbor Wind Phase III"
+    asset_class: "Wind Energy"
+    naics_code: "221115"  # Wind Electric Power Generation
+    location: "Offshore Maine"
+    cbsa_code: "38860"  # Portland-South Portland, ME MSA
+    capacity: "300 MW"
+    status: "Permitting phase"
+    ppa_status: "65% contracted"
+
+  - property_id: "property:FVW-OFF"
+    name: "Fairview Plaza Offices"
+    asset_class: "Office Real Estate"
+    ncreif_type: "Office"
+    naics_code: "531120"
+    location: "Suburban Atlanta, GA"
+    cbsa_code: "12060"  # Atlanta-Sandy Springs-Roswell, GA MSA
+    size: "225,000 SF"
+    condition: "Class B, built 2001"
+    occupancy: "58%"
+
+  - property_id: "property:SMT-APT"
+    name: "Summit Ridge Apartments"
+    asset_class: "Multifamily"
+    ncreif_type: "Apartment"
+    naics_code: "531110"
+    location: "Charlotte, NC"
+    cbsa_code: "16740"  # Charlotte-Concord-Gastonia, NC-SC MSA
+    units: 412
+    condition: "Class B+, built 2015"
+    occupancy: "91%"
+
+market_sectors:
+  - market_id: "market:US-IND-MW"
+    name: "US Midwest Industrial"
+    region: "US Midwest"
+    asset_class: "Industrial Real Estate"
+    ncreif_type: "Industrial-Warehouse"
+    naics_code: "531120"
+    cbsa_examples: ["18140", "26900", "16980"]  # Columbus OH, Indianapolis IN, Chicago IL
+    cap_rate_range: "6.0-7.5%"
+    occupancy_range: "88-94%"
+    trends: "Strong e-commerce demand, limited supply"
+
+  - market_id: "market:US-WIND-WY"
+    name: "Wyoming Wind Market"
+    region: "US Mountain West"
+    asset_class: "Wind Energy"
+    naics_code: "221115"
+    cbsa_examples: ["16940"]  # Cheyenne WY
+    ppa_rate_range: "$22-28/MWh"
+    trends: "Strong wind resource, transmission constraints"
+
+  - market_id: "market:US-OFF-SUB"
+    name: "US Suburban Office"
+    region: "US National"
+    asset_class: "Office Real Estate"
+    ncreif_type: "Office"
+    naics_code: "531120"
+    cbsa_examples: ["19740", "12060", "19100"]  # Denver CO, Atlanta GA, Dallas TX
+    cap_rate_range: "7.5-9.5%"
+    occupancy_range: "75-85%"
+    trends: "Softening demand post-COVID, flight to quality"
+
+  - market_id: "market:US-MF-SUN"
+    name: "Sunbelt Multifamily"
+    region: "US Sunbelt"
+    asset_class: "Multifamily"
+    ncreif_type: "Apartment"
+    naics_code: "531110"
+    cbsa_examples: ["12420", "36740", "16740", "19100"]  # Austin TX, Orlando FL, Charlotte NC, Dallas TX
+    cap_rate_range: "5.0-6.5%"
+    occupancy_range: "90-95%"
+    trends: "Strong in-migration, rent growth moderating"
+
+  - market_id: "market:US-SLV-SE"
+    name: "Southeast Senior Living"
+    region: "US Southeast"
+    asset_class: "Senior Living"
+    ncreif_type: "Seniors Housing"
+    naics_code: "531110"
+    cbsa_examples: ["33100", "36740", "12060"]  # Miami FL, Orlando FL, Atlanta GA
+    cap_rate_range: "7.0-8.5%"
+    occupancy_range: "85-92%"
+    trends: "Aging demographics, labor cost pressure"
+
+  - market_id: "market:US-RET-TX"
+    name: "Texas Retail"
+    region: "Texas"
+    asset_class: "Retail"
+    ncreif_type: "Retail"
+    naics_code: "531120"
+    cbsa_examples: ["19100", "12420", "26420"]  # Dallas TX, Austin TX, Houston TX
+    cap_rate_range: "7.5-9.5%"
+    occupancy_range: "75-88%"
+    trends: "E-commerce disruption, grocery-anchored outperforming"
+
+  - market_id: "market:US-SOL-SW"
+    name: "Southwest Solar"
+    region: "US Southwest"
+    asset_class: "Solar Energy"
+    naics_code: "221114"
+    cbsa_examples: ["38060", "29820", "40140"]  # Phoenix AZ, Las Vegas NV, Riverside CA
+    ppa_rate_range: "$18-26/MWh"
+    trends: "Excellent solar resource, growing battery storage adoption"
+
+  - market_id: "market:US-WIND-OFF"
+    name: "Offshore Wind (US Northeast)"
+    region: "US Northeast"
+    asset_class: "Offshore Wind"
+    naics_code: "221115"
+    cbsa_examples: ["38860", "14460", "35620"]  # Portland ME, Boston MA, New York NY
+    ppa_rate_range: "$80-120/MWh"
+    trends: "State mandates driving growth, high development costs"
+
+lenders:
+  - lender_id: "lender:WFC-001"
+    name: "Wells Fargo Commercial Real Estate"
+    aliases: ["Wells Fargo", "WFC", "Wells"]
+    institution_type: "Commercial Bank"
+    lending_focus: ["Commercial Real Estate", "Multifamily", "Industrial"]
+    typical_ltv: "70-75%"
+    typical_terms: "5-10 year terms, floating or fixed"
+
+  - lender_id: "lender:ARS-001"
+    name: "Ares Private Credit"
+    aliases: ["Ares", "Ares Credit"]
+    institution_type: "Private Credit Fund"
+    lending_focus: ["Bridge Loans", "Mezzanine", "Preferred Equity"]
+    typical_ltv: "75-85%"
+    typical_terms: "2-3 year terms, floating + SOFR"
+
+  - lender_id: "lender:BNY-001"
+    name: "BNY Mellon Project Finance"
+    aliases: ["BNY", "Bank of New York"]
+    institution_type: "Commercial Bank"
+    lending_focus: ["Renewable Energy", "Infrastructure"]
+    typical_ltv: "60-70%"
+    typical_terms: "15-20 year terms, matched to PPAs"
+
+  - lender_id: "lender:SIF-001"
+    name: "Starwood Infrastructure Fund"
+    aliases: ["Starwood", "SIF"]
+    institution_type: "Infrastructure Fund"
+    lending_focus: ["Energy Infrastructure", "Data Centers"]
+    typical_ltv: "50-65%"
+    typical_terms: "7-12 year terms, equity-like returns"
+
+  - lender_id: "lender:BAM-001"
+    name: "Brookfield Asset Management"
+    aliases: ["Brookfield", "BAM"]
+    institution_type: "Alternative Asset Manager"
+    lending_focus: ["Real Estate", "Infrastructure", "Renewable Energy"]
+    typical_ltv: "60-75%"
+    typical_terms: "Flexible structures, long-term hold"
+
+deals:
+  - deal_id: "deal:GLV-001"
+    deal_name: "Glenview Industrial Warehouse"
+    asset_class: "Industrial Real Estate"
+    transaction_type: "Acquisition Financing"
+    deal_size_usd: 42000000
+    investment_amount_usd: 12600000  # 30% equity
+    sponsor_id: "sponsor:HRZ-001"
+    property_id: "property:GLV-001"
+    market_id: "market:US-IND-MW"
+    analyst_id: "analyst:FEL-001"
+    status: "IC Review"
+    date_received: "2024-09-15"
+
+  - deal_id: "deal:GLW-PH1-001"
+    deal_name: "Greenline Wind Phase I"
+    asset_class: "Wind Energy"
+    transaction_type: "Project Finance"
+    deal_size_usd: 380000000
+    investment_amount_usd: 95000000  # 25% equity
+    sponsor_id: "sponsor:GRN-001"
+    property_id: "property:GLW-PH1"
+    market_id: "market:US-WIND-WY"
+    analyst_id: "analyst:MIC-001"
+    status: "Funded"
+    date_received: "2024-08-20"
+
+  - deal_id: "deal:IRW-001"
+    deal_name: "Ironwood Office Park"
+    asset_class: "Office Real Estate"
+    transaction_type: "Bridge Loan"
+    deal_size_usd: 65000000
+    investment_amount_usd: 28000000
+    sponsor_id: "sponsor:FVW-001"
+    property_id: "property:IRW-001"
+    market_id: "market:US-OFF-SUB"
+    analyst_id: "analyst:FEL-001"
+    status: "Declined"
+    date_received: "2024-09-22"
+
+  - deal_id: "deal:RBD-001"
+    deal_name: "Riverbend Apartments"
+    asset_class: "Multifamily"
+    transaction_type: "Acquisition Financing"
+    deal_size_usd: 54000000
+    investment_amount_usd: 16200000  # 30% equity
+    sponsor_id: "sponsor:RBD-001"
+    property_id: "property:RBD-APT"
+    market_id: "market:US-MF-SUN"
+    analyst_id: "analyst:SAR-001"
+    status: "IC Review"
+    date_received: "2024-09-28"
+
+  - deal_id: "deal:HRZ-001"
+    deal_name: "Horizon Industrial Center"
+    asset_class: "Industrial Real Estate"
+    transaction_type: "Refinancing"
+    deal_size_usd: 38000000
+    investment_amount_usd: 11400000
+    sponsor_id: "sponsor:HRZ-001"
+    property_id: "property:HRZ-IND"
+    market_id: "market:US-IND-MW"
+    analyst_id: "analyst:SAR-001"
+    status: "Pipeline"
+    date_received: "2024-10-05"
+
+  - deal_id: "deal:OKV-001"
+    deal_name: "Oakview Senior Living"
+    asset_class: "Senior Living"
+    transaction_type: "Acquisition Financing"
+    deal_size_usd: 28000000
+    investment_amount_usd: 8400000
+    sponsor_id: "sponsor:OKV-001"
+    property_id: "property:OKV-SLF"
+    market_id: "market:US-SLV-SE"
+    analyst_id: "analyst:FEL-001"
+    status: "IC Review"
+    date_received: "2024-09-18"
+
+  - deal_id: "deal:NTG-001"
+    deal_name: "Northgate Logistics Expansion"
+    asset_class: "Logistics"
+    transaction_type: "Construction Loan"
+    deal_size_usd: 125000000
+    investment_amount_usd: 37500000
+    sponsor_id: "sponsor:NTG-001"
+    property_id: "property:NTG-LOG"
+    market_id: "market:US-IND-MW"
+    analyst_id: "analyst:SAR-001"
+    status: "Pipeline"
+    date_received: "2024-10-12"
+
+  - deal_id: "deal:MPL-001"
+    deal_name: "Maple Grove Retail Plaza"
+    asset_class: "Retail"
+    transaction_type: "Bridge Loan"
+    deal_size_usd: 18000000
+    investment_amount_usd: 7200000
+    sponsor_id: "sponsor:MPL-001"
+    property_id: "property:MPL-RET"
+    market_id: "market:US-RET-TX"
+    analyst_id: "analyst:FEL-001"
+    status: "Watchlist"
+    date_received: "2024-09-10"
+
+  - deal_id: "deal:HME-001"
+    deal_name: "High Mesa Hybrid Energy"
+    asset_class: "Solar + Storage"
+    transaction_type: "Project Finance"
+    deal_size_usd: 285000000
+    investment_amount_usd: 71250000
+    sponsor_id: "sponsor:HME-001"
+    property_id: "property:HME-HYB"
+    market_id: "market:US-SOL-SW"
+    analyst_id: "analyst:MIC-001"
+    status: "IC Review"
+    date_received: "2024-10-01"
+
+  - deal_id: "deal:LKS-001"
+    deal_name: "Lakeside Manor Apartments"
+    asset_class: "Multifamily"
+    transaction_type: "Acquisition Financing"
+    deal_size_usd: 62000000
+    investment_amount_usd: 18600000
+    sponsor_id: "sponsor:RBD-001"
+    property_id: "property:LKS-APT"
+    market_id: "market:US-MF-SUN"
+    analyst_id: "analyst:SAR-001"
+    status: "Funded"
+    date_received: "2024-08-15"
+
+  - deal_id: "deal:BLH-001"
+    deal_name: "Blue Harbor Wind Phase III"
+    asset_class: "Offshore Wind"
+    transaction_type: "Project Finance"
+    deal_size_usd: 890000000
+    investment_amount_usd: 178000000  # 20% equity
+    sponsor_id: "sponsor:BLH-001"
+    property_id: "property:BLH-W3"
+    market_id: "market:US-WIND-OFF"
+    analyst_id: "analyst:MIC-001"
+    status: "Pipeline"
+    date_received: "2024-10-08"
+
+  - deal_id: "deal:FVW-001"
+    deal_name: "Fairview Plaza Offices"
+    asset_class: "Office Real Estate"
+    transaction_type: "Bridge Loan"
+    deal_size_usd: 32000000
+    investment_amount_usd: 14400000
+    sponsor_id: "sponsor:FVW-001"
+    property_id: "property:FVW-OFF"
+    market_id: "market:US-OFF-SUB"
+    analyst_id: "analyst:FEL-001"
+    status: "Declined"
+    date_received: "2024-09-25"
+
+  - deal_id: "deal:SMT-001"
+    deal_name: "Summit Ridge Apartments"
+    asset_class: "Multifamily"
+    transaction_type: "Refinancing"
+    deal_size_usd: 68000000
+    investment_amount_usd: 20400000
+    sponsor_id: "sponsor:SMT-001"
+    property_id: "property:SMT-APT"
+    market_id: "market:US-MF-SUN"
+    analyst_id: "analyst:SAR-001"
+    status: "IC Review"
+    date_received: "2024-10-03"
+
+# USING INDUSTRY CODES FOR DATA INTEGRATION
+#
+# The entities above include official industry classification codes that enable:
+#
+# 1. **NCREIF Benchmarking**:
+#    - Compare property returns against NCREIF Property Index by type
+#    - Query: "What's our industrial-warehouse portfolio IRR vs NCREIF Industrial?"
+#    - Data source: https://www.ncreif.org/data-products/property/
+#
+# 2. **NAICS Industry Analysis**:
+#    - Link to BLS employment data, wage data, industry trends
+#    - Query: "What's the growth rate for NAICS 531110 (multifamily) in CBSA 12420 (Austin)?"
+#    - Data source: https://www.bls.gov/ (Bureau of Labor Statistics)
+#
+# 3. **CBSA Market Data**:
+#    - Link to Census demographic data, migration trends, economic indicators
+#    - Query: "What's the population growth in CBSA 19740 (Denver) for our office exposure?"
+#    - Data sources: US Census Bureau, FRED (Federal Reserve Economic Data)
+#
+# 4. **Cross-Market Comparables**:
+#    - Find comparable deals by matching NCREIF type + CBSA + NAICS
+#    - Query: "Show me apartment deals (NCREIF: Apartment, NAICS: 531110) in Sunbelt CBSAs"
+#
+# 5. **CFI Financial Instrument Classification**:
+#    - Classify debt vs equity instruments using ISO 10962 standard
+#    - Useful for regulatory reporting, risk classification, portfolio construction
+#
+# Example queries enabled by these codes:
+# - "What's our concentration in CBSA 19100 (Dallas-Fort Worth)?"
+# - "Compare our Wind Energy (NAICS 221115) portfolio to market PPA rates"
+# - "Show NCREIF Office cap rates for CBSAs where we have exposure"
+# - "What's the job growth in NAICS 531120 markets?"
+#
+# Expected entity relationships (edges):
+expected_edges:
+  # Sponsor relationships
+  - edge: "sponsor:GRN-001 -[SPONSORS]-> deal:GLW-PH1-001"
+  - edge: "sponsor:HRZ-001 -[SPONSORS]-> deal:GLV-001"
+  - edge: "sponsor:HRZ-001 -[SPONSORS]-> deal:HRZ-001"
+  - edge: "sponsor:RBD-001 -[SPONSORS]-> deal:RBD-001"
+  - edge: "sponsor:RBD-001 -[SPONSORS]-> deal:LKS-001"
+  - edge: "sponsor:FVW-001 -[SPONSORS]-> deal:IRW-001"
+  - edge: "sponsor:FVW-001 -[SPONSORS]-> deal:FVW-001"
+  - edge: "sponsor:SMT-001 -[SPONSORS]-> deal:SMT-001"
+
+  # Asset relationships
+  - edge: "deal:GLV-001 -[ASSET]-> property:GLV-001"
+  - edge: "deal:GLW-PH1-001 -[ASSET]-> property:GLW-PH1"
+  - edge: "deal:IRW-001 -[ASSET]-> property:IRW-001"
+  - edge: "deal:RBD-001 -[ASSET]-> property:RBD-APT"
+  - edge: "deal:HRZ-001 -[ASSET]-> property:HRZ-IND"
+
+  # Market relationships
+  - edge: "property:GLV-001 -[LOCATED_IN]-> market:US-IND-MW"
+  - edge: "property:GLW-PH1 -[LOCATED_IN]-> market:US-WIND-WY"
+  - edge: "property:IRW-001 -[LOCATED_IN]-> market:US-OFF-SUB"
+  - edge: "property:RBD-APT -[LOCATED_IN]-> market:US-MF-SUN"
+
+  # Analyst relationships
+  - edge: "deal:GLV-001 -[ANALYZED_BY]-> analyst:FEL-001"
+  - edge: "deal:GLW-PH1-001 -[ANALYZED_BY]-> analyst:MIC-001"
+  - edge: "deal:IRW-001 -[ANALYZED_BY]-> analyst:FEL-001"
+  - edge: "deal:RBD-001 -[ANALYZED_BY]-> analyst:SAR-001"
+
+  # Sponsor track record (precedence)
+  - edge: "deal:LKS-001 -[PRECEDED_BY]-> deal:RBD-001"  # Same sponsor
+  - edge: "deal:HRZ-001 -[PRECEDED_BY]-> deal:GLV-001"  # Same sponsor
+
+  # Market concentration
+  - edge: "deal:GLV-001 -[COMPETES_WITH]-> deal:HRZ-001"  # Same market

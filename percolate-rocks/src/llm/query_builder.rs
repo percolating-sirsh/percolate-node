@@ -1,7 +1,7 @@
 //! Natural language to SQL/SEARCH query builder.
 
 use crate::types::{Result, DatabaseError};
-use crate::llm::planner::{QueryPlan, QueryResult, QueryIntent};
+use crate::llm::planner::{QueryPlan, QueryType, Query, QueryDialect, ExecutionMode, QueryResult};
 use serde::Deserialize;
 use serde_json::json;
 use reqwest::Client;
@@ -11,6 +11,7 @@ use reqwest::Client;
 pub enum LlmProvider {
     OpenAI,
     Anthropic,
+    Cerebras,
 }
 
 /// LLM-powered query builder.
@@ -49,6 +50,32 @@ struct AnthropicContent {
 }
 
 impl LlmQueryBuilder {
+    /// Strip markdown code blocks from LLM response.
+    ///
+    /// Handles:
+    /// - ```json ... ```
+    /// - ```JSON ... ```
+    /// - ``` ... ```
+    fn strip_markdown(text: &str) -> String {
+        let text = text.trim();
+
+        // Check for ```json ... ``` or ```JSON ... ```
+        if text.starts_with("```json") || text.starts_with("```JSON") {
+            let start = text.find('\n').map(|i| i + 1).unwrap_or(0);
+            let end = text.rfind("```").unwrap_or(text.len());
+            return text[start..end].trim().to_string();
+        }
+
+        // Check for generic ``` ... ```
+        if text.starts_with("```") {
+            let start = text.find('\n').map(|i| i + 1).unwrap_or(0);
+            let end = text.rfind("```").unwrap_or(text.len());
+            return text[start..end].trim().to_string();
+        }
+
+        text.to_string()
+    }
+
     /// Create new query builder.
     ///
     /// # Arguments
@@ -62,6 +89,8 @@ impl LlmQueryBuilder {
     pub fn new(api_key: String, model: String) -> Self {
         let provider = if model.starts_with("claude") || model.starts_with("anthropic") {
             LlmProvider::Anthropic
+        } else if model.starts_with("cerebras") || model.starts_with("llama") {
+            LlmProvider::Cerebras
         } else {
             LlmProvider::OpenAI
         };
@@ -77,7 +106,7 @@ impl LlmQueryBuilder {
     /// Create from environment variables.
     ///
     /// Uses `P8_DEFAULT_LLM` for model (default: "gpt-4-turbo")
-    /// Uses `OPENAI_API_KEY` or `ANTHROPIC_API_KEY` based on model
+    /// Uses `CEREBRAS_API_KEY`, `OPENAI_API_KEY`, or `ANTHROPIC_API_KEY` based on model
     ///
     /// # Errors
     ///
@@ -90,6 +119,11 @@ impl LlmQueryBuilder {
             std::env::var("ANTHROPIC_API_KEY")
                 .map_err(|_| DatabaseError::ConfigError(
                     "ANTHROPIC_API_KEY environment variable not set".to_string()
+                ))?
+        } else if model.starts_with("cerebras") || model.starts_with("llama") || model.starts_with("qwen") {
+            std::env::var("CEREBRAS_API_KEY")
+                .map_err(|_| DatabaseError::ConfigError(
+                    "CEREBRAS_API_KEY environment variable not set".to_string()
                 ))?
         } else {
             std::env::var("OPENAI_API_KEY")
@@ -120,10 +154,13 @@ impl LlmQueryBuilder {
     }
 
     /// Call LLM API with structured output.
-    async fn call_llm(&self, system_prompt: &str, user_prompt: &str) -> Result<String> {
+    ///
+    /// Public method to allow reuse by other LLM-powered modules.
+    pub async fn call_llm(&self, system_prompt: &str, user_prompt: &str) -> Result<String> {
         match self.provider {
             LlmProvider::OpenAI => self.call_openai(system_prompt, user_prompt).await,
             LlmProvider::Anthropic => self.call_anthropic(system_prompt, user_prompt).await,
+            LlmProvider::Cerebras => self.call_cerebras(system_prompt, user_prompt).await,
         }
     }
 
@@ -191,11 +228,228 @@ impl LlmQueryBuilder {
         }
 
         let parsed: AnthropicResponse = serde_json::from_str(&body)
-            .map_err(|e| DatabaseError::LlmError(format!("Failed to parse Anthropic response: {}", e)))?;
+            .map_err(|e| DatabaseError::LlmError(format!("Failed to parse Anthropic response: {}\nBody: {}", e, body)))?;
 
-        Ok(parsed.content.first()
+        let text = parsed.content.first()
             .ok_or_else(|| DatabaseError::LlmError("No response from Anthropic".to_string()))?
-            .text.clone())
+            .text.clone();
+
+        // Debug: log the raw response
+        eprintln!("Anthropic raw response:\n{}", text);
+
+        // Strip markdown code blocks
+        Ok(Self::strip_markdown(&text))
+    }
+
+    /// Get JSON Schema for QueryPlan struct.
+    fn get_query_plan_schema() -> serde_json::Value {
+        json!({
+            "type": "object",
+            "properties": {
+                "query_type": {
+                    "type": "string",
+                    "enum": ["lookup", "search", "traverse", "sql", "hybrid"]
+                },
+                "confidence": {"type": "number"},
+                "primary_query": {
+                    "type": "object",
+                    "properties": {
+                        "dialect": {"type": "string", "enum": ["rem_sql", "standard_sql"]},
+                        "query_string": {"type": "string"},
+                        "parameters": {
+                            "anyOf": [
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "keys": {"type": "array", "items": {"type": "string"}}
+                                    },
+                                    "required": ["keys"],
+                                    "additionalProperties": false
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "query_text": {"type": "string"},
+                                        "schema": {"type": "string"},
+                                        "top_k": {"type": "integer"},
+                                        "filters": {
+                                            "type": "object",
+                                            "properties": {},
+                                            "additionalProperties": false
+                                        }
+                                    },
+                                    "required": ["query_text", "schema"],
+                                    "additionalProperties": false
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "entity_id": {"type": "string"},
+                                        "relation_type": {"type": "string"},
+                                        "direction": {"type": "string", "enum": ["forward", "reverse", "both"]},
+                                        "max_depth": {"type": "integer"}
+                                    },
+                                    "required": ["entity_id", "relation_type", "direction"],
+                                    "additionalProperties": false
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {},
+                                    "additionalProperties": false
+                                }
+                            ]
+                        }
+                    },
+                    "required": ["dialect", "query_string", "parameters"],
+                    "additionalProperties": false
+                },
+                "fallback_queries": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "query": {
+                                "type": "object",
+                                "properties": {
+                                    "dialect": {"type": "string"},
+                                    "query_string": {"type": "string"},
+                                    "parameters": {
+                                        "anyOf": [
+                                            {
+                                                "type": "object",
+                                                "properties": {
+                                                    "keys": {"type": "array", "items": {"type": "string"}}
+                                                },
+                                                "required": ["keys"],
+                                                "additionalProperties": false
+                                            },
+                                            {
+                                                "type": "object",
+                                                "properties": {
+                                                    "query_text": {"type": "string"},
+                                                    "schema": {"type": "string"},
+                                                    "top_k": {"type": "integer"},
+                                                    "filters": {
+                                                        "type": "object",
+                                                        "properties": {},
+                                                        "additionalProperties": false
+                                                    }
+                                                },
+                                                "required": ["query_text", "schema"],
+                                                "additionalProperties": false
+                                            },
+                                            {
+                                                "type": "object",
+                                                "properties": {
+                                                    "entity_id": {"type": "string"},
+                                                    "relation_type": {"type": "string"},
+                                                    "direction": {"type": "string", "enum": ["forward", "reverse", "both"]},
+                                                    "max_depth": {"type": "integer"}
+                                                },
+                                                "required": ["entity_id", "relation_type", "direction"],
+                                                "additionalProperties": false
+                                            },
+                                            {
+                                                "type": "object",
+                                                "properties": {},
+                                                "additionalProperties": false
+                                            }
+                                        ]
+                                    }
+                                },
+                                "required": ["dialect", "query_string", "parameters"],
+                                "additionalProperties": false
+                            },
+                            "trigger": {
+                                "type": "string",
+                                "enum": ["no_results", "error", "low_quality"]
+                            },
+                            "confidence": {"type": "number"},
+                            "reasoning": {"type": "string"}
+                        },
+                        "required": ["query", "trigger", "confidence", "reasoning"],
+                        "additionalProperties": false
+                    }
+                },
+                "execution_mode": {
+                    "type": "string",
+                    "enum": ["single_pass", "multi_stage", "adaptive"]
+                },
+                "schema_hints": {"type": "array", "items": {"type": "string"}},
+                "reasoning": {"type": "string"},
+                "explanation": {
+                    "anyOf": [{"type": "string"}, {"type": "null"}]
+                },
+                "next_steps": {"type": "array", "items": {"type": "string"}},
+                "metadata": {
+                    "type": "object",
+                    "properties": {
+                        "estimated_rows": {
+                            "anyOf": [{"type": "integer"}, {"type": "null"}]
+                        },
+                        "estimated_latency_ms": {
+                            "anyOf": [{"type": "integer"}, {"type": "null"}]
+                        },
+                        "cacheable": {"type": "boolean"}
+                    },
+                    "required": ["cacheable"],
+                    "additionalProperties": false
+                }
+            },
+            "required": [
+                "query_type", "confidence", "primary_query", "fallback_queries",
+                "execution_mode", "schema_hints", "reasoning", "next_steps", "metadata"
+            ],
+            "additionalProperties": false
+        })
+    }
+
+    /// Call Cerebras API (OpenAI-compatible) with strict JSON schema.
+    async fn call_cerebras(&self, system_prompt: &str, user_prompt: &str) -> Result<String> {
+        let response = self.client
+            .post("https://api.cerebras.ai/v1/chat/completions")
+            .header("Authorization", format!("Bearer {}", self.api_key))
+            .header("Content-Type", "application/json")
+            .json(&json!({
+                "model": self.model.strip_prefix("cerebras:").unwrap_or(&self.model),
+                "messages": [
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt}
+                ],
+                "response_format": {
+                    "type": "json_schema",
+                    "json_schema": {
+                        "name": "query_plan",
+                        "strict": true,
+                        "schema": Self::get_query_plan_schema()
+                    }
+                },
+                "temperature": 0.1,
+                "max_tokens": 4096
+            }))
+            .send()
+            .await
+            .map_err(|e| DatabaseError::LlmError(format!("Cerebras API error: {}", e)))?;
+
+        let status = response.status();
+        let body = response.text().await
+            .map_err(|e| DatabaseError::LlmError(format!("Failed to read response: {}", e)))?;
+
+        if !status.is_success() {
+            return Err(DatabaseError::LlmError(format!("Cerebras API error {}: {}", status, body)));
+        }
+
+        let parsed: OpenAIResponse = serde_json::from_str(&body)
+            .map_err(|e| DatabaseError::LlmError(format!("Failed to parse Cerebras response: {}\nBody: {}", e, body)))?;
+
+        let text = parsed.choices.first()
+            .ok_or_else(|| DatabaseError::LlmError("No response from Cerebras".to_string()))?
+            .message.content.clone();
+
+        // Debug: log the raw response
+        eprintln!("Cerebras raw response:\n{}", text);
+
+        Ok(text)
     }
 
     /// Generate query plan without executing.
@@ -216,55 +470,86 @@ impl LlmQueryBuilder {
         // Check if it's a simple entity lookup
         if Self::is_entity_lookup(question) {
             return Ok(QueryPlan {
-                intent: QueryIntent::EntityLookup,
-                query: format!("LOOKUP '{}'", question),
+                query_type: QueryType::Lookup,
                 confidence: 1.0,
+                primary_query: Query {
+                    dialect: QueryDialect::RemSql,
+                    query_string: format!("LOOKUP '{}'", question),
+                    parameters: json!({"keys": [question]}),
+                },
+                fallback_queries: vec![],
+                execution_mode: ExecutionMode::SinglePass,
+                schema_hints: vec![],
                 reasoning: "Exact identifier pattern detected".to_string(),
                 explanation: None,
-                requires_search: false,
-                parameters: json!({"key": question}),
-                next_steps: vec![],
+                next_steps: vec!["Execute lookup".to_string()],
+                metadata: Default::default(),
             });
         }
 
-        let system_prompt = r#"You are a query planning expert for a semantic database with extended SQL syntax.
+        let system_prompt = r#"You are a query planner for REM Database. Return ONLY valid JSON matching this EXACT schema:
 
-Your task is to convert natural language questions into executable queries.
-
-Available query types and syntax:
-1. **EntityLookup**: `LOOKUP 'key1', 'key2'` - Global key search for identifiers
-2. **Select**: `SELECT * FROM table WHERE conditions` - Standard SQL
-3. **Search**: `SEARCH 'query' IN table [WHERE ...] [LIMIT n]` - Semantic vector search
-4. **Hybrid**: `SEARCH 'query' IN table WHERE field='value'` - Semantic + filters
-5. **Traverse**: `TRAVERSE FROM 'uuid' DEPTH n DIRECTION out [TYPE 'rel']` - Graph navigation
-6. **Aggregate**: `SELECT COUNT(*) FROM table` - SQL aggregations
-
-Output ONLY valid JSON matching this schema:
 {
-  "intent": "Select|Search|Hybrid|Traverse|Aggregate|EntityLookup",
-  "query": "Extended SQL syntax",
+  "query_type": "lookup" | "search" | "traverse" | "sql" | "hybrid",
   "confidence": 0.0-1.0,
-  "reasoning": "Brief explanation of intent detection",
-  "explanation": "Required if confidence < 0.6, otherwise null",
-  "requires_search": true|false,
-  "parameters": {"key": "value"},
-  "next_steps": ["action1", "action2"]
+  "primary_query": {
+    "dialect": "rem_sql",
+    "query_string": "LOOKUP 'key' | SEARCH 'text' IN schema | SELECT ...",
+    "parameters": { ... }
+  },
+  "fallback_queries": [
+    {
+      "query": {
+        "dialect": "rem_sql",
+        "query_string": "...",
+        "parameters": { ... }
+      },
+      "trigger": "no_results" | "error" | "low_quality",
+      "confidence": 0.0-1.0,
+      "reasoning": "Why this fallback"
+    }
+  ],
+  "execution_mode": "single_pass" | "multi_stage" | "adaptive",
+  "schema_hints": [],
+  "reasoning": "Brief explanation",
+  "explanation": null,
+  "next_steps": ["step1", "step2"],
+  "metadata": {
+    "estimated_rows": null,
+    "estimated_latency_ms": null,
+    "cacheable": true
+  }
 }
 
-Confidence scoring:
-- 1.0: Exact ID lookup (use LOOKUP syntax)
-- 0.8-0.95: Clear field-based SQL query
-- 0.6-0.8: Semantic/vector search (use SEARCH syntax)
-- < 0.6: Ambiguous (MUST provide explanation)
+REM SQL DIALECT:
+- LOOKUP 'key1', 'key2' - Key-based lookup (uses key_index CF, very fast)
+- SEARCH 'text' IN schema [WHERE ...] LIMIT n - Semantic vector search
+- TRAVERSE FROM <uuid> DEPTH n DIRECTION in|out|both [TYPE 'rel'] - Graph traversal
+- SELECT fields FROM schema [WHERE ...] [ORDER BY ...] [LIMIT n] - SQL (NO JOINS)
 
-Examples:
-- "user-123" → LOOKUP 'user-123'
-- "Show users where role = admin" → SELECT * FROM users WHERE role = 'admin'
-- "Find articles about Rust" → SEARCH 'Rust' IN articles
-- "Recent Python tutorials" → SEARCH 'Python tutorials' IN articles WHERE created_at > '2024-01-01'
-- "Who authored this document?" → TRAVERSE FROM 'doc-uuid' DEPTH 1 DIRECTION in TYPE 'authored'
+RULES:
+1. DO NOT guess schema names - if unknown, use LOOKUP (schema-agnostic)
+2. Use LOOKUP for identifiers (UUIDs, keys, names) - searches all schemas
+3. Use SEARCH for semantic queries when schema provided
+4. SQL WHERE predicates ONLY if schema provided
+5. TRAVERSE needs start entity (LOOKUP first if only name given)
+6. NO JOINs - use TRAVERSE for relationships
 
-Be concise. Output JSON only."#;
+CONFIDENCE:
+- 1.0: Exact UUID/key lookup
+- 0.9-0.95: Clear identifier pattern with schema
+- 0.8-0.9: Clear field query with schema
+- 0.6-0.8: Semantic search or multiple interpretations
+- <0.6: Ambiguous (provide explanation)
+
+PARAMETERS (what to query, not how):
+- LOOKUP: {"keys": ["key1", "key2"]}
+- SEARCH: {"query_text": "text", "schema": "name", "top_k": 10, "filters": {...}}
+- TRAVERSE: {"start_key": "name", "depth": 1-3, "direction": "out|in|both", "edge_type": "rel"}
+- SQL: {"schema": "name", "fields": [...], "where": {...}, "order_by": "field", "limit": n}
+- HYBRID: {"query_text": "text", "schema": "name", "top_k": 10, "filters": {...}}
+
+OUTPUT: Valid JSON only, no markdown, no explanation outside JSON."#;
 
         let user_prompt = format!(
             "Question: {}\n\nSchema context:\n{}\n\nGenerate query plan (JSON only):",

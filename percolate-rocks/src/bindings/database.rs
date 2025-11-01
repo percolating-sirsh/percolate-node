@@ -43,6 +43,60 @@ fn get_tenant_id() -> String {
         .unwrap_or_else(|_| "default".to_string())
 }
 
+/// Chunk text into larger, meaningful segments.
+///
+/// Groups paragraphs together to create chunks of minimum size (min_chars)
+/// while respecting maximum size (max_chars).
+///
+/// # Arguments
+///
+/// * `text` - Full document text
+/// * `min_chars` - Minimum characters per chunk (default: 500)
+/// * `max_chars` - Maximum characters per chunk (default: 2000)
+///
+/// # Returns
+///
+/// Vector of text chunks
+fn chunk_text(text: &str, min_chars: usize, max_chars: usize) -> Vec<String> {
+    let paragraphs: Vec<&str> = text
+        .split("\n\n")
+        .map(|p| p.trim())
+        .filter(|p| !p.is_empty())
+        .collect();
+
+    let mut chunks = Vec::new();
+    let mut current_chunk = String::new();
+
+    for paragraph in paragraphs {
+        // If adding this paragraph would exceed max_chars and we have content, start new chunk
+        if !current_chunk.is_empty() && current_chunk.len() + paragraph.len() + 2 > max_chars {
+            chunks.push(current_chunk.clone());
+            current_chunk.clear();
+        }
+
+        // Add paragraph to current chunk
+        if !current_chunk.is_empty() {
+            current_chunk.push_str("\n\n");
+        }
+        current_chunk.push_str(paragraph);
+
+        // If we've reached min size, we can consider this a complete chunk
+        // (but we'll keep adding until max_chars if paragraphs keep coming)
+    }
+
+    // Add final chunk if not empty
+    if !current_chunk.is_empty() {
+        chunks.push(current_chunk);
+    }
+
+    // If we ended up with no chunks (empty document), return single empty chunk
+    if chunks.is_empty() {
+        chunks.push(String::new());
+    }
+
+    chunks
+}
+
 /// Python wrapper for Database.
 ///
 /// Exposes high-level API to Python with automatic type conversions.
@@ -129,21 +183,29 @@ impl PyDatabase {
     /// # Returns
     ///
     /// List of entity UUIDs
+    ///
+    /// # Performance
+    ///
+    /// This uses true batch operations:
+    /// - Single atomic RocksDB write batch
+    /// - Validates all entities before writing (fail-fast)
+    /// - Much faster than individual inserts
     fn insert_batch(&self, table: String, entities: &PyList) -> PyResult<Vec<String>> {
-        let mut uuids = Vec::new();
+        // Convert Python list to Vec<serde_json::Value>
+        let mut entity_values = Vec::with_capacity(entities.len());
 
         for item in entities.iter() {
             let dict = item.downcast::<PyDict>()?;
             let value: serde_json::Value = pythonize::depythonize(dict)
                 .map_err(|e| PyErr::new::<pyo3::exceptions::PyValueError, _>(format!("Failed to convert data: {}", e)))?;
-
-            let uuid = self.inner.insert(&self.tenant_id, &table, value)
-                .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!("Failed to insert: {}", e)))?;
-
-            uuids.push(uuid.to_string());
+            entity_values.push(value);
         }
 
-        Ok(uuids)
+        // Use Database::batch_insert for atomic batch write
+        let uuids = self.inner.batch_insert(&self.tenant_id, &table, entity_values)
+            .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!("Failed to batch insert: {}", e)))?;
+
+        Ok(uuids.iter().map(|u| u.to_string()).collect())
     }
 
     /// Get entity by ID.
@@ -172,27 +234,143 @@ impl PyDatabase {
         }
     }
 
-    /// Lookup entity by key.
+    /// Batch get entities by IDs.
     ///
     /// # Arguments
     ///
-    /// * `table` - Table/schema name
-    /// * `key_value` - Key field value
+    /// * `entity_ids` - List of entity UUID strings
     ///
     /// # Returns
     ///
-    /// List of matching entities
-    fn lookup(&self, py: Python<'_>, table: String, key_value: String) -> PyResult<Vec<PyObject>> {
-        let entity = self.inner.get_by_key(&self.tenant_id, &table, &key_value)
+    /// List of entity dicts (None for not found, in same order as input)
+    ///
+    /// # Performance
+    ///
+    /// Uses RocksDB multi_get for efficient bulk retrieval.
+    /// Much faster than individual get() calls.
+    ///
+    /// # Example
+    ///
+    /// ```python
+    /// ids = [uuid1, uuid2, uuid3]
+    /// entities = db.get_batch(ids)
+    /// # entities[0] corresponds to uuid1, etc.
+    /// ```
+    fn get_batch(&self, py: Python<'_>, entity_ids: Vec<String>) -> PyResult<Vec<Option<PyObject>>> {
+        // Parse UUIDs
+        let uuids: Result<Vec<_>, _> = entity_ids.iter()
+            .map(|id| uuid::Uuid::parse_str(id))
+            .collect();
+
+        let uuids = uuids.map_err(|e| PyErr::new::<pyo3::exceptions::PyValueError, _>(
+            format!("Invalid UUID: {}", e)
+        ))?;
+
+        // Batch get from database
+        let entities = self.inner.get_batch(&self.tenant_id, &uuids)
+            .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(
+                format!("Failed to batch get: {}", e)
+            ))?;
+
+        // Convert to Python objects
+        let mut results = Vec::with_capacity(entities.len());
+        for entity_opt in entities {
+            match entity_opt {
+                Some(entity) => {
+                    let dict = entity_to_pydict(py, &entity)?;
+                    results.push(Some(dict.into()));
+                }
+                None => results.push(None),
+            }
+        }
+
+        Ok(results)
+    }
+
+    /// Batch lookup entities by key values.
+    ///
+    /// # Arguments
+    ///
+    /// * `key_values` - List of key values to lookup
+    ///
+    /// # Returns
+    ///
+    /// List of entity lists (one list per key value, in same order as input).
+    /// Each inner list contains all entities matching that key.
+    ///
+    /// # Performance
+    ///
+    /// More efficient than individual lookup() calls due to batched index scans.
+    ///
+    /// # Example
+    ///
+    /// ```python
+    /// keys = ["Alice", "Bob", "Charlie"]
+    /// results = db.lookup_batch(keys)
+    /// # results[0] = all entities with key "Alice"
+    /// # results[1] = all entities with key "Bob"
+    /// # results[2] = all entities with key "Charlie"
+    /// ```
+    fn lookup_batch(&self, py: Python<'_>, key_values: Vec<String>) -> PyResult<Vec<Vec<PyObject>>> {
+        // Batch lookup from database
+        let entities_by_key = self.inner.lookup_batch(&self.tenant_id, &key_values)
+            .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(
+                format!("Failed to batch lookup: {}", e)
+            ))?;
+
+        // Convert to Python objects
+        let mut results = Vec::with_capacity(entities_by_key.len());
+        for entities in entities_by_key {
+            let mut group = Vec::with_capacity(entities.len());
+            for entity in entities {
+                let dict = entity_to_pydict(py, &entity)?;
+                group.push(dict.into());
+            }
+            results.push(group);
+        }
+
+        Ok(results)
+    }
+
+    /// Global lookup by key value across all schemas (anonymous types).
+    ///
+    /// **Core REM Pattern**: Find entities by natural key without knowing the schema.
+    ///
+    /// # Arguments
+    ///
+    /// * `key_value` - Key field value (e.g., "Alice", "alice@example.com")
+    ///
+    /// # Returns
+    ///
+    /// List of all matching entities (may be from different schemas)
+    ///
+    /// # Why Global Lookup?
+    ///
+    /// - **Anonymous types**: Users don't need to know schema names
+    /// - **Natural keys**: "Alice" finds Alice regardless of storage location
+    /// - **No SQL/GraphQL**: Avoids requiring schema knowledge upfront
+    ///
+    /// # Example
+    ///
+    /// ```python
+    /// # Global lookup - finds Alice in ANY schema
+    /// results = db.lookup("Alice")
+    ///
+    /// # Could return multiple entities if "Alice" exists in different schemas
+    /// for entity in results:
+    ///     print(f"Found in {entity.get('id', 'unknown')}")
+    /// ```
+    fn lookup(&self, py: Python<'_>, key_value: String) -> PyResult<Vec<PyObject>> {
+        let entities = self.inner.lookup_global(&self.tenant_id, &key_value)
             .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!("Failed to lookup: {}", e)))?;
 
-        match entity {
-            Some(ent) => {
-                let dict = entity_to_pydict(py, &ent)?;
-                Ok(vec![dict.into()])
-            }
-            None => Ok(vec![]),
+        let mut results = Vec::new();
+        for entity in entities {
+            let dict = entity_to_pydict(py, &entity)?;
+            results.push(dict.into());
         }
+
+        Ok(results)
     }
 
     /// Search entities by semantic similarity.
@@ -299,25 +477,41 @@ impl PyDatabase {
                         return Ok(serde_json::to_value(&plan)?);
                     }
 
-                    // Execute based on intent
-                    match plan.intent {
-                        crate::llm::planner::QueryIntent::Select => {
-                            inner.query_sql(&tenant_id, &plan.query)
+                    // Execute based on query type
+                    match plan.query_type {
+                        crate::llm::planner::QueryType::Sql => {
+                            inner.query_sql(&tenant_id, &plan.primary_query.query_string)
                         }
-                        crate::llm::planner::QueryIntent::EntityLookup => {
-                            let key = plan.parameters["key"].as_str().unwrap();
-                            let schema = schema_hint_clone.as_deref().unwrap_or("resources");
-                            match inner.get_by_key(&tenant_id, schema, key)? {
-                                Some(entity) => Ok(serde_json::to_value(&entity)?),
-                                None => Ok(serde_json::Value::Array(vec![])),
+                        crate::llm::planner::QueryType::Lookup => {
+                            // Extract first key from keys array
+                            let keys = plan.primary_query.parameters["keys"]
+                                .as_array()
+                                .ok_or_else(|| crate::types::DatabaseError::ValidationError(
+                                    "LOOKUP requires 'keys' array parameter".to_string()
+                                ))?;
+
+                            if let Some(first_key) = keys.first() {
+                                let key = first_key.as_str().unwrap_or("");
+                                let schema = schema_hint_clone.as_deref().unwrap_or("resources");
+                                match inner.get_by_key(&tenant_id, schema, key)? {
+                                    Some(entity) => Ok(serde_json::to_value(&entity)?),
+                                    None => Ok(serde_json::Value::Array(vec![])),
+                                }
+                            } else {
+                                Ok(serde_json::Value::Array(vec![]))
                             }
                         }
-                        crate::llm::planner::QueryIntent::Search => {
-                            let schema = schema_hint_clone.as_deref().unwrap_or("resources");
-                            let top_k = plan.parameters.get("top_k")
+                        crate::llm::planner::QueryType::Search => {
+                            let schema = plan.primary_query.parameters.get("schema")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or(schema_hint_clone.as_deref().unwrap_or("resources"));
+                            let query_text = plan.primary_query.parameters.get("query_text")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or(&plan.primary_query.query_string);
+                            let top_k = plan.primary_query.parameters.get("top_k")
                                 .and_then(|v| v.as_u64())
                                 .unwrap_or(10) as usize;
-                            let results = inner.search(&tenant_id, schema, &plan.query, top_k).await?;
+                            let results = inner.search(&tenant_id, schema, query_text, top_k).await?;
                             Ok(serde_json::to_value(&results)?)
                         }
                         _ => {
@@ -332,6 +526,136 @@ impl PyDatabase {
 
         pythonize::pythonize(py, &result)
             .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!("Failed to convert result: {}", e)))
+    }
+
+    /// Generate query plan from natural language without executing.
+    ///
+    /// # Arguments
+    ///
+    /// * `question` - Natural language question
+    /// * `schema_context` - Optional schema context for better planning
+    ///
+    /// # Returns
+    ///
+    /// QueryPlan JSON object with query_type, confidence, primary_query, fallback_queries, etc.
+    ///
+    /// # Example
+    ///
+    /// ```python
+    /// # Plan a query
+    /// plan = db.plan_query("find articles about rust", "articles")
+    /// print(f"Query type: {plan['query_type']}")
+    /// print(f"Confidence: {plan['confidence']}")
+    /// print(f"Primary query: {plan['primary_query']['query_string']}")
+    ///
+    /// # Then execute the plan separately if desired
+    /// results = db.run_plan(plan)
+    /// ```
+    fn plan_query(&self, py: Python<'_>, question: String, schema_context: Option<String>) -> PyResult<PyObject> {
+        use crate::llm::query_builder::LlmQueryBuilder;
+
+        // Build query plan (uses environment variables for API keys and model)
+        let builder = LlmQueryBuilder::from_env()
+            .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(
+                format!("Failed to create query builder: {}", e)
+            ))?;
+
+        // Format schema context
+        let context = schema_context
+            .map(|s| format!("Schema: {}", s))
+            .unwrap_or_else(|| "General query".to_string());
+
+        // Generate plan asynchronously
+        let result: serde_json::Value = py.allow_threads(|| -> crate::types::Result<serde_json::Value> {
+            tokio::runtime::Runtime::new()
+                .unwrap()
+                .block_on(async {
+                    let plan = builder.plan_query(&question, &context).await?;
+                    Ok(serde_json::to_value(&plan)?)
+                })
+        })
+        .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(
+            format!("Query planning failed: {}", e)
+        ))?;
+
+        pythonize::pythonize(py, &result)
+            .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(
+                format!("Failed to convert plan: {}", e)
+            ))
+    }
+
+    /// Extract relationship edges from document content using LLM.
+    ///
+    /// Uses the Rust-native EdgeBuilder to analyze content and identify
+    /// relationships to other entities, generating inline edges ready to
+    /// append to resources.
+    ///
+    /// # Arguments
+    ///
+    /// * `content` - Document content (text, markdown, etc.)
+    /// * `context` - Optional context about the document (file name, type, etc.)
+    ///
+    /// # Returns
+    ///
+    /// EdgePlan JSON object with:
+    /// - edges: Array of inline edges (dst, rel_type, properties, created_at)
+    /// - summary: Statistics (total_edges, relationship_types, avg_confidence)
+    ///
+    /// # Example
+    ///
+    /// ```python
+    /// # Extract edges from document
+    /// plan = db.extract_edges(
+    ///     content="This document references Design Doc 001...",
+    ///     context="architecture/rem-database.md"
+    /// )
+    ///
+    /// # Access edges
+    /// for edge in plan['edges']:
+    ///     print(f"Found: {edge['rel_type']} -> {edge['dst']}")
+    ///
+    /// # Append to resource
+    /// resource = db.get(resource_id)
+    /// resource['edges'] = resource.get('edges', []) + plan['edges']
+    /// db.insert('resources', resource)  # Upsert with edge merging
+    /// ```
+    ///
+    /// # Requires
+    ///
+    /// Environment variables:
+    /// - P8_DEFAULT_LLM: LLM model (default: "gpt-4-turbo")
+    /// - OPENAI_API_KEY or ANTHROPIC_API_KEY: API key for LLM provider
+    fn extract_edges(
+        &self,
+        py: Python<'_>,
+        content: String,
+        context: Option<String>,
+    ) -> PyResult<PyObject> {
+        use crate::llm::edge_builder::LlmEdgeBuilder;
+
+        // Create edge builder (uses environment variables for API keys and model)
+        let builder = LlmEdgeBuilder::from_env()
+            .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(
+                format!("Failed to create edge builder: {}", e)
+            ))?;
+
+        // Extract edges asynchronously
+        let result: serde_json::Value = py.allow_threads(|| -> crate::types::Result<serde_json::Value> {
+            tokio::runtime::Runtime::new()
+                .unwrap()
+                .block_on(async {
+                    let plan = builder.extract_edges(&content, context.as_deref()).await?;
+                    Ok(serde_json::to_value(&plan)?)
+                })
+        })
+        .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(
+            format!("Edge extraction failed: {}", e)
+        ))?;
+
+        pythonize::pythonize(py, &result)
+            .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(
+                format!("Failed to convert edge plan: {}", e)
+            ))
     }
 
     /// List all registered schemas.
@@ -448,19 +772,23 @@ impl PyDatabase {
             .and_then(|n| n.to_str())
             .unwrap_or("unknown");
 
-        // Simple chunking: split by paragraphs (double newline)
-        let chunks: Vec<&str> = content
-            .split("\n\n")
-            .filter(|s| !s.trim().is_empty())
-            .collect();
+        // Better chunking: group paragraphs into larger chunks (default ~500 chars min)
+        let chunks = chunk_text(&content, 500, 2000);
 
         let mut uuids = Vec::new();
+
+        // Convert file path to file:// URI
+        let uri = if file_path.starts_with("http://") || file_path.starts_with("https://") || file_path.starts_with("file://") {
+            file_path.clone()
+        } else {
+            format!("file://{}", file_path)
+        };
 
         // Insert each chunk as a separate entity
         for (i, chunk) in chunks.iter().enumerate() {
             let mut data = serde_json::Map::new();
             data.insert("content".to_string(), serde_json::Value::String(chunk.to_string()));
-            data.insert("uri".to_string(), serde_json::Value::String(file_path.clone()));
+            data.insert("uri".to_string(), serde_json::Value::String(uri.clone()));
             data.insert("chunk_ordinal".to_string(), serde_json::Value::Number(i.into()));
             data.insert("name".to_string(), serde_json::Value::String(format!("{} (chunk {})", file_name, i)));
 

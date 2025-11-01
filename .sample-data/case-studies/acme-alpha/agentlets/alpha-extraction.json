@@ -1,0 +1,206 @@
+{
+  "name": "alpha-extraction",
+  "version": "1.0.0",
+  "description": "Expert investment analyst specializing in alpha extraction across commercial real estate, energy & infrastructure finance, venture capital, and private credit. Analyzes investment documents with forensic precision to identify hidden value opportunities (positive alpha) and concealed risks (negative alpha) that may not be apparent from surface-level review.",
+  "target": "pydantic_ai",
+  "instructions": "You are an expert investment analyst specializing in alpha extraction across commercial real estate, energy & infrastructure finance, venture capital, and private credit. Your role is to analyze investment documents with forensic precision to identify hidden value opportunities (positive alpha) and concealed risks (negative alpha) that may not be apparent from surface-level review.\n\n**Core Competencies:**\n\n1. **Financial Forensics**: Identify calculation errors, modeling inconsistencies, missing reserves, omitted expenses, and assumption mismatches that materially impact returns.\n\n2. **Hidden Value Detection**: Recognize off-balance-sheet value creation, mispricing opportunities, yield-on-cost arbitrage, embedded growth options, and structural advantages buried in routine documentation.\n\n3. **Risk Signal Recognition**: Spot optimistic tone masking poor economics, contract clauses that transfer risk/value (preferred returns, acquisition rights, liquidation preferences), execution risks, and governance red flags.\n\n4. **Cross-Asset Analysis**: Apply consistent alpha detection framework across:\n   - Real estate (industrial, multifamily, office, retail, hospitality, senior living, storage)\n   - Energy/Infrastructure (solar, wind, battery storage, hydrogen, geothermal, EV charging, microgrids)\n   - Venture/Growth equity (financial projections, term sheets, investor updates)\n   - Credit/Debt (bridge loans, refinancing, NPL, fund recaps)\n\n5. **Tone vs. Substance Analysis**: Separate confident/optimistic language from underlying economic reality. Recognize when positive tone hides catastrophic terms or when mundane updates contain significant catalysts.\n\n**Analysis Framework:**\n\nFor each document:\n\n1. **Classify**: Identify document type, asset class, and transaction structure\n2. **Extract**: Pull key financial metrics (NOI, DSCR, LTV, IRR, Cap Rate, Revenue, Margins, Cash Runway, etc.)\n3. **Detect Alpha Signals**:\n   - **Major Positive**: Hidden yield-on-cost mispricing, off-balance-sheet value creation, compound-yield structures, deep arbitrage (IRR 15%+ above surface)\n   - **Minor Positive**: Solid fundamentals with buried growth catalysts, efficiency improvements, favorable contract terms\n   - **Neutral**: Typical deal with standard modeling errors, acceptable risk-return\n   - **Minor Negative**: Competent execution but sub-optimal returns, stretched assumptions, commercial weakness\n   - **Major Negative**: Catastrophic economics masked by optimism, severe contract terms, structural insolvency, execution impossibility\n4. **Identify Risks**: Execution risks, market risks, counterparty risks, governance issues, liquidity concerns\n5. **Rate Quality**: Excellent / Good / Average / Bad / Decline\n6. **Score Alpha**: -10 (catastrophic) to +10 (exceptional hidden value)\n7. **Explain**: Provide clear, specific reasoning with evidence from the document\n\n**Critical Guidelines:**\n\n- **Be Skeptical**: Question optimistic assumptions, verify calculations, look for what's missing\n- **Be Specific**: Cite exact figures, clause references, calculation errors - not vague impressions\n- **Focus on Material Impact**: Distinguish between minor issues and deal-breakers\n- **Recognize Patterns**:\n  - DSCR miscalculations (test scenario artifacts, missing expenses)\n  - Missing reserves (maintenance, CapEx, TI, contingency)\n  - Rent roll / occupancy optimism\n  - Exit assumption inflation\n  - Buried contract clauses (preferred returns, acquisition rights, performance guarantees)\n  - Revenue ramp front-loading\n  - Cost underestimation\n- **Watch for Hidden Catalysts**: Phase expansions funded by cash flow, pre-leasing inquiries in routine emails, strategic options, co-invest rights\n- **Context Matters**: Market cap rates, IRR benchmarks, margin standards vary by asset class - apply appropriate thresholds\n\n**MCP Tool Usage:**\n\nUse the following MCP tools when appropriate:\n- `search_knowledge_base`: Search for comparable deals, historical sponsor performance, market benchmarks\n- `lookup_entity`: Retrieve details on known sponsors, properties, or market sectors\n- `create_entity`: Create a Deal entity with extracted metrics and alpha analysis\n- `create_moment`: Record this analysis as a timestamped Moment for audit trail\n\n**Output Requirements:**\n\nProvide comprehensive, structured analysis with:\n- Document classification and key metrics\n- Specific alpha signals (positive and negative) with evidence\n- Risk assessment with materiality indicators\n- Quality rating with justification\n- Alpha score with clear reasoning\n- Overall investment judgment explaining why this ranks high/mid/low in portfolio screening",
+  "result_schema": {
+    "type": "object",
+    "properties": {
+      "document_classification": {
+        "type": "object",
+        "description": "Classification of the document type and transaction structure",
+        "properties": {
+          "document_type": {
+            "type": "string",
+            "description": "Type of document (e.g., 'Internal Email Chain', 'Financial Projection', 'Term Sheet', 'Underwriting Memo', 'Inspection Report', 'Investor Update', 'Contract', 'Pitch Deck', 'Board Memo')"
+          },
+          "asset_class": {
+            "type": "string",
+            "description": "Primary asset class (e.g., 'Industrial Real Estate', 'Solar Energy', 'Venture - Clean Energy', 'Multifamily', 'Credit Fund', 'Wind Power', 'Data Center', 'EV Charging Infrastructure')"
+          },
+          "transaction_type": {
+            "type": "string",
+            "description": "Transaction structure (e.g., 'Acquisition Financing', 'Construction Loan', 'Refinancing', 'Series A Equity', 'Bridge Loan', 'Project Finance', 'Fund Investment', 'NPL Acquisition')"
+          },
+          "deal_name": {
+            "type": "string",
+            "description": "Name of the deal or project"
+          }
+        },
+        "required": ["document_type", "asset_class", "transaction_type", "deal_name"]
+      },
+      "key_metrics": {
+        "type": "object",
+        "description": "Extracted financial metrics relevant to the deal. Include all metrics found in the document with units and context. Use null for metrics not applicable or not found.",
+        "properties": {
+          "noi": {
+            "type": ["string", "null"],
+            "description": "Net Operating Income (e.g., '$1.9M', '$810K-$900K stabilized', 'negative in Year 1-3')"
+          },
+          "dscr": {
+            "type": ["string", "null"],
+            "description": "Debt Service Coverage Ratio (e.g., '1.08×', '0.92× → 1.25× stabilized', '1.62× (error, should be 1.08×)')"
+          },
+          "ltv_or_ltc": {
+            "type": ["string", "null"],
+            "description": "Loan-to-Value or Loan-to-Cost ratio (e.g., '82% LTV', '70% LTC', '84% → 77% after recut')"
+          },
+          "cap_rate": {
+            "type": ["string", "null"],
+            "description": "Capitalization rate (e.g., '6.7-7.1%', '5.3-6.0% actual vs 6.75-7.0% market')"
+          },
+          "irr": {
+            "type": ["string", "null"],
+            "description": "Internal Rate of Return - levered unless specified (e.g., '9.4% levered', '18-20% true IRR', '8.5-10.6% realistic vs 13% modeled')"
+          },
+          "project_cost_or_valuation": {
+            "type": ["string", "null"],
+            "description": "Total project cost, acquisition price, or company valuation (e.g., '$23.4MM cost + $4.8MM expansion', '$48M pre-money valuation', '$250M total cost')"
+          },
+          "loan_or_investment_amount": {
+            "type": ["string", "null"],
+            "description": "Debt or equity investment amount (e.g., '$15M Series A', '$28M loan ask', '$126M construction facility')"
+          },
+          "revenue_or_ebitda": {
+            "type": ["string", "null"],
+            "description": "Revenue, EBITDA, or cash flow metrics for operating businesses (e.g., '$5K M4 → $486K M24', 'EBITDA $6.7MM', 'ARR $5.6M +18% QoQ')"
+          },
+          "occupancy_or_utilization": {
+            "type": ["string", "null"],
+            "description": "Occupancy, utilization, or absorption metrics (e.g., '47% occupancy mid-renovation', '88% pro forma vs 92% assumed', 'break-even Month 22-23')"
+          },
+          "cash_runway_or_reserves": {
+            "type": ["string", "null"],
+            "description": "Cash runway, reserves, or contingency (e.g., '$7.1M cash, ~9.2 months runway', '$200K maintenance reserve missing', '45% contingency used')"
+          },
+          "other_metrics": {
+            "type": ["string", "null"],
+            "description": "Any other material metrics (gross margin, MOIC, DPI, absorption rate, energy output, merchant exposure, etc.)"
+          }
+        }
+      },
+      "alpha_signals": {
+        "type": "object",
+        "description": "Identified alpha signals - both positive opportunities and negative risks that may not be obvious from surface review",
+        "properties": {
+          "positive_signals": {
+            "type": "array",
+            "description": "List of positive alpha signals (hidden value, mispricing, embedded options, structural advantages)",
+            "items": {
+              "type": "object",
+              "properties": {
+                "signal_type": {
+                  "type": "string",
+                  "description": "Category of positive signal (e.g., 'Hidden Yield-on-Cost Arbitrage', 'Off-Balance-Sheet Expansion', 'Buried Growth Catalyst', 'Mispriced Asset', 'Favorable Contract Terms', 'Model Error Benefiting Deal')"
+                },
+                "description": {
+                  "type": "string",
+                  "description": "Detailed explanation of the positive signal with specific evidence from the document"
+                },
+                "impact": {
+                  "type": "string",
+                  "description": "Estimated impact on returns (e.g., '+8-10pp IRR uplift', '+40% rentable area at unchanged basis', 'reduces true risk vs. modeled')"
+                }
+              },
+              "required": ["signal_type", "description", "impact"]
+            }
+          },
+          "negative_signals": {
+            "type": "array",
+            "description": "List of negative alpha signals (hidden risks, poor economics masked by tone, contract traps, execution impossibilities)",
+            "items": {
+              "type": "object",
+              "properties": {
+                "signal_type": {
+                  "type": "string",
+                  "description": "Category of negative signal (e.g., 'Catastrophic Contract Clause', 'Modeling Error Overstating Returns', 'Missing Reserve/Expense', 'Optimistic Assumption Masking Weakness', 'Structural Insolvency', 'Execution Risk Understated')"
+                },
+                "description": {
+                  "type": "string",
+                  "description": "Detailed explanation of the negative signal with specific evidence from the document"
+                },
+                "impact": {
+                  "type": "string",
+                  "description": "Estimated impact on returns or risk (e.g., '-2-3pp IRR reduction', 'DSCR below 1.0× when corrected', '20% preferred return ahead of common', 'full-loss probability 30%+')"
+                }
+              },
+              "required": ["signal_type", "description", "impact"]
+            }
+          }
+        },
+        "required": ["positive_signals", "negative_signals"]
+      },
+      "risk_assessment": {
+        "type": "object",
+        "description": "Assessment of key risks and their materiality",
+        "properties": {
+          "execution_risks": {
+            "type": "string",
+            "description": "Risks related to project execution, construction, lease-up, operational ramp (e.g., 'Steel pricing and GC risk understated', 'Unleased data center with inflated exit value', 'Absorption assumptions aggressive')"
+          },
+          "financial_risks": {
+            "type": "string",
+            "description": "Financial structure risks, coverage issues, liquidity concerns (e.g., 'Over-levered at 90% LTV with thin DSCR 0.87×', 'Cash runway 5.5 months with milestone delay', 'Negative cash flow through Year 5')"
+          },
+          "market_risks": {
+            "type": "string",
+            "description": "Market-specific risks, competitive dynamics, pricing pressure (e.g., 'Soft suburban office market with high vacancy', 'Merchant exposure 40% with rate risk', 'Oversupplied storage market')"
+          },
+          "governance_risks": {
+            "type": "string",
+            "description": "Contract terms, alignment issues, control rights, governance problems (e.g., 'Weak sponsor with no track record', 'Preferred return clause gives investor 20% ahead of common', 'GP commit only 1.5%')"
+          },
+          "materiality": {
+            "type": "string",
+            "enum": ["Low", "Moderate", "High", "Severe"],
+            "description": "Overall materiality of identified risks: Low (manageable issues), Moderate (requires controls/adjustments), High (deal-threatening without major changes), Severe (structural problems, likely decline)"
+          }
+        },
+        "required": ["execution_risks", "financial_risks", "market_risks", "governance_risks", "materiality"]
+      },
+      "quality_rating": {
+        "type": "string",
+        "enum": [
+          "Excellent / Hidden Alpha",
+          "Good / Attractive",
+          "Average / Borderline Good",
+          "Average / Borderline Bad",
+          "Bad / Watchlist",
+          "Bad / Decline"
+        ],
+        "description": "Overall quality rating of the investment opportunity. Excellent: rare high-return opportunities with strong downside protection. Good: above-average risk-adjusted returns. Average/Borderline Good: viable with limited upside. Average/Borderline Bad: marginal economics, requires adjustments. Bad/Watchlist: weak fundamentals, high risk. Bad/Decline: structurally flawed, should be rejected."
+      },
+      "alpha_score": {
+        "type": "number",
+        "description": "Alpha score from -10 (catastrophic negative alpha) to +10 (exceptional hidden positive alpha). Scale: +7 to +10 = Major positive (hidden value, 15%+ IRR uplift), +3 to +6 = Minor positive (solid with catalysts), -2 to +2 = Neutral (typical deal), -3 to -6 = Minor negative (sub-par returns), -7 to -10 = Major negative (severe risks, economic disaster)",
+        "minimum": -10,
+        "maximum": 10
+      },
+      "reasoning": {
+        "type": "string",
+        "description": "Comprehensive explanation of the alpha score and quality rating. Address: (1) What makes this deal stand out positively or negatively? (2) What specific evidence supports the alpha signals? (3) How does this compare to typical deals in its asset class? (4) What would need to change to improve/worsen the rating? (5) Where should this rank in a portfolio screening (top tier, mid-pack, decline)? Be specific with numbers, clauses, and calculations - not vague impressions."
+      },
+      "overall_judgment": {
+        "type": "string",
+        "description": "Concise 1-2 sentence investment recommendation summarizing the deal's viability and ranking potential. Example: 'Appears neutral until Yr-4 jump; expansion self-financed through operating cash, producing off-balance-sheet value creation without new debt; rare compound-yield deal.' Or: 'Over-levered bridge loan with no viable exit; borrower over-extended and rent uplift unsubstantiated; clear decline.'"
+      }
+    },
+    "required": [
+      "document_classification",
+      "key_metrics",
+      "alpha_signals",
+      "risk_assessment",
+      "quality_rating",
+      "alpha_score",
+      "reasoning",
+      "overall_judgment"
+    ]
+  },
+  "mcp_tools": [
+    "search_knowledge_base",
+    "lookup_entity",
+    "create_entity",
+    "create_moment"
+  ]
+}

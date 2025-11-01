@@ -6,6 +6,74 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use uuid::Uuid;
 
+/// Inline edge representation (stored in entity JSON).
+///
+/// Used when `edge_storage_mode: "inline"` (default).
+/// Edges are stored directly in the entity's edges array.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct InlineEdge {
+    /// Destination entity UUID
+    pub dst: Uuid,
+
+    /// Relationship type (e.g., "authored", "references", "member_of")
+    pub rel_type: String,
+
+    /// Edge properties (optional metadata)
+    #[serde(default)]
+    pub properties: HashMap<String, serde_json::Value>,
+
+    /// Edge creation timestamp
+    pub created_at: String,
+}
+
+impl InlineEdge {
+    /// Create a new inline edge.
+    ///
+    /// # Arguments
+    ///
+    /// * `dst` - Destination entity UUID
+    /// * `rel_type` - Relationship type
+    ///
+    /// # Returns
+    ///
+    /// New `InlineEdge` with timestamp initialized
+    pub fn new(dst: Uuid, rel_type: String) -> Self {
+        Self {
+            dst,
+            rel_type,
+            properties: HashMap::new(),
+            created_at: chrono::Utc::now().to_rfc3339(),
+        }
+    }
+
+    /// Create edge with properties.
+    ///
+    /// # Arguments
+    ///
+    /// * `dst` - Destination entity UUID
+    /// * `rel_type` - Relationship type
+    /// * `properties` - Edge metadata
+    pub fn with_properties(
+        dst: Uuid,
+        rel_type: String,
+        properties: HashMap<String, serde_json::Value>,
+    ) -> Self {
+        Self {
+            dst,
+            rel_type,
+            properties,
+            created_at: chrono::Utc::now().to_rfc3339(),
+        }
+    }
+
+    /// Get unique key for this edge (dst + rel_type).
+    ///
+    /// Used for merging edges during upsert.
+    pub fn key(&self) -> (Uuid, String) {
+        (self.dst, self.rel_type.clone())
+    }
+}
+
 /// System fields automatically added to all entities.
 ///
 /// These fields are never defined in user schemas - always auto-generated.
@@ -26,8 +94,38 @@ pub struct SystemFields {
     /// Soft delete timestamp (ISO 8601), null if not deleted
     pub deleted_at: Option<String>,
 
-    /// Graph edge references (array of edge IDs)
-    pub edges: Vec<String>,
+    /// Graph edges (inline mode).
+    ///
+    /// **Storage Modes:**
+    /// - `"inline"` (default): Edges stored here as array of InlineEdge objects
+    /// - `"indexed"`: Empty array, edges stored in RocksDB column families
+    ///
+    /// **Inline Mode Format:**
+    /// ```json
+    /// "edges": [
+    ///   {
+    ///     "dst": "uuid",
+    ///     "rel_type": "authored",
+    ///     "properties": {"since": "2024-01-01"},
+    ///     "created_at": "2024-01-01T00:00:00Z"
+    ///   }
+    /// ]
+    /// ```
+    ///
+    /// **Indexed Mode:**
+    /// Edges stored separately in `edges` and `edges_reverse` column families.
+    /// This field remains empty. Use `EdgeManager` for CRUD operations.
+    ///
+    /// Configure in schema `json_schema_extra`:
+    /// ```python
+    /// model_config = ConfigDict(
+    ///     json_schema_extra={
+    ///         "edge_storage_mode": "inline"  # or "indexed"
+    ///     }
+    /// )
+    /// ```
+    #[serde(default)]
+    pub edges: Vec<InlineEdge>,
 }
 
 /// Entity represents a single data record with system fields and user properties.
@@ -141,6 +239,99 @@ impl Entity {
     /// `true` if `deleted_at` is not null
     pub fn is_deleted(&self) -> bool {
         self.system.deleted_at.is_some()
+    }
+
+    /// Add or update inline edge.
+    ///
+    /// If edge with same (dst, rel_type) exists, updates its properties.
+    /// Otherwise, adds new edge.
+    ///
+    /// # Arguments
+    ///
+    /// * `edge` - Inline edge to add/update
+    ///
+    /// # Note
+    ///
+    /// Only applicable for inline edge storage mode.
+    /// For indexed mode, use `EdgeManager` instead.
+    pub fn add_edge(&mut self, edge: InlineEdge) {
+        // Find existing edge with same (dst, rel_type)
+        if let Some(existing) = self.system.edges.iter_mut()
+            .find(|e| e.key() == edge.key()) {
+            // Update existing edge properties
+            existing.properties = edge.properties;
+            existing.created_at = edge.created_at;
+        } else {
+            // Add new edge
+            self.system.edges.push(edge);
+        }
+
+        // Update modified timestamp
+        self.system.modified_at = chrono::Utc::now().to_rfc3339();
+    }
+
+    /// Remove inline edge by destination and relationship type.
+    ///
+    /// # Arguments
+    ///
+    /// * `dst` - Destination entity UUID
+    /// * `rel_type` - Relationship type
+    ///
+    /// # Returns
+    ///
+    /// `true` if edge was removed, `false` if not found
+    pub fn remove_edge(&mut self, dst: Uuid, rel_type: &str) -> bool {
+        let initial_len = self.system.edges.len();
+        self.system.edges.retain(|e| !(e.dst == dst && e.rel_type == rel_type));
+        let removed = self.system.edges.len() < initial_len;
+
+        if removed {
+            self.system.modified_at = chrono::Utc::now().to_rfc3339();
+        }
+
+        removed
+    }
+
+    /// Get inline edges by relationship type.
+    ///
+    /// # Arguments
+    ///
+    /// * `rel_type` - Relationship type filter (None for all edges)
+    ///
+    /// # Returns
+    ///
+    /// Vector of edges matching the filter
+    pub fn get_edges(&self, rel_type: Option<&str>) -> Vec<&InlineEdge> {
+        match rel_type {
+            Some(rt) => self.system.edges.iter().filter(|e| e.rel_type == rt).collect(),
+            None => self.system.edges.iter().collect(),
+        }
+    }
+
+    /// Merge edges from another entity during upsert.
+    ///
+    /// **Merge Strategy:**
+    /// - Edges are identified by (dst, rel_type) key
+    /// - Existing edges are updated with new properties
+    /// - New edges are appended
+    /// - No edges are deleted (explicit remove required)
+    ///
+    /// # Arguments
+    ///
+    /// * `other_edges` - Edges from incoming entity
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// // Existing entity has: [Edge{dst: A, rel: "friend"}]
+    /// // New entity has:      [Edge{dst: A, rel: "friend", props: {since: "2024"}}, Edge{dst: B, rel: "colleague"}]
+    /// entity.merge_edges(new_edges);
+    /// // Result:              [Edge{dst: A, rel: "friend", props: {since: "2024"}}, Edge{dst: B, rel: "colleague"}]
+    /// ```
+    pub fn merge_edges(&mut self, other_edges: Vec<InlineEdge>) {
+        for edge in other_edges {
+            self.add_edge(edge);
+        }
     }
 }
 

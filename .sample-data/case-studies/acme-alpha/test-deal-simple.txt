@@ -1,0 +1,67 @@
+# Maple Grove Apartments - Investment Memo
+
+## Executive Summary
+
+**Deal Name:** Maple Grove Apartments
+**Asset Class:** Multifamily Real Estate
+**Transaction Type:** Acquisition Financing
+**Location:** Austin, TX (CBSA 12420)
+
+## Financial Summary
+
+**Purchase Price:** $28.5 million
+**Loan Amount:** $22.8 million (80% LTV)
+**Interest Rate:** SOFR + 325 bps
+**NOI (Year 1):** $2.1 million
+**DSCR:** 1.25×
+**Pro Forma Cap Rate:** 7.4%
+**Projected IRR:** 15.2% levered
+
+## Property Details
+
+- **Units:** 180 units
+- **Occupancy:** 92% current, 95% pro forma
+- **Average Rent:** $1,450/month
+- **Year Built:** 2018
+- **Condition:** Excellent, minimal capex needed
+
+## Market Analysis
+
+Austin multifamily market continues strong fundamentals:
+- Population growth: 2.8% YoY (2024-Q3)
+- Employment growth: 3.1% YoY
+- Rent growth: 5-7% annually projected
+- Cap rates: 6.5-7.5% range for Class B+ properties
+
+## Sponsor
+
+**Name:** Sunbelt Capital Partners
+**Track Record:** 15 multifamily acquisitions, $450M AUM
+**Average Returns:** 18% IRR across portfolio
+**Occupancy Track Record:** 94%+ average
+
+## Key Terms
+
+- **Loan Term:** 3 years interest-only with 2-year extension option
+- **Prepayment:** Yield maintenance
+- **Recourse:** Non-recourse with standard carve-outs
+- **Guarantor:** Sunbelt Capital Partners (net worth $85M)
+
+## Investment Highlights
+
+1. **Strong Market Fundamentals**: Austin ranks #2 in US population growth among major metros
+2. **Experienced Sponsor**: Proven track record in Texas multifamily
+3. **Conservative Underwriting**: 92% occupancy vs 95% market average provides cushion
+4. **Value-Add Potential**: Opportunity to increase rents $50-75/unit with minor amenity upgrades
+5. **Exit Flexibility**: Strong buyer demand for stabilized multifamily in Austin
+
+## Risks
+
+1. **Interest Rate Risk**: Floating rate exposure, though manageable with 1.25× DSCR
+2. **Market Saturation**: 3,500 units under construction within 5-mile radius
+3. **Rent Growth Assumptions**: Pro forma assumes 5% annual growth; market could soften
+4. **Execution**: Value-add upgrades require 12-18 months to implement
+
+## Recommendation
+
+**APPROVE** - Strong deal with solid fundamentals, experienced sponsor, and conservative leverage. Austin market fundamentals support projected returns. DSCR of 1.25× provides adequate cushion for rate volatility.

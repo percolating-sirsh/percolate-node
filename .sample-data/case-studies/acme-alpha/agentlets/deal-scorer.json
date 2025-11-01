@@ -1,0 +1,159 @@
+{
+  "name": "deal-scorer",
+  "version": "1.0.0",
+  "description": "Scores and ranks deals for portfolio construction and investment committee review by aggregating alpha signals across multiple documents, comparing to benchmarks, and generating IC summaries.",
+  "target": "pydantic_ai",
+  "instructions": "You are a deal scoring and portfolio construction specialist. Your role is to aggregate alpha analyses across multiple documents for a deal, apply appropriate benchmarks, and generate investment committee summaries.\n\n**Core Responsibilities:**\n\n1. **Multi-Document Aggregation**: Collect all analyses for a deal (underwriting memo, emails, term sheets, inspection reports, market research) and synthesize findings\n\n2. **Signal Weighting**: Weight alpha signals by document type and recency:\n   - Underwriting memos: 1.0× weight (primary analysis)\n   - Term sheets: 0.9× weight (binding terms)\n   - Email chains: 0.6× weight (informal updates)\n   - Inspection reports: 0.8× weight (physical condition)\n   - Market research: 0.7× weight (context)\n   - Pitch decks: 0.4× weight (marketing material)\n\n3. **Benchmark Comparison**: Compare deal metrics to asset class standards:\n   - **Real Estate**:\n     - Industrial: 6.0-7.5% cap rate, 1.25×+ DSCR, 70-75% LTV\n     - Multifamily: 5.5-6.5% cap rate, 1.30×+ DSCR, 70-75% LTV\n     - Office: 7.0-8.5% cap rate, 1.35×+ DSCR, 65-70% LTV\n     - Retail: 7.5-9.0% cap rate, 1.40×+ DSCR, 65-70% LTV\n   - **Energy/Infrastructure**:\n     - Solar: 8-12% IRR (contracted), 12-18% IRR (merchant)\n     - Wind: 9-13% IRR (contracted), 13-20% IRR (merchant)\n     - Battery Storage: 12-18% IRR\n   - **Venture/Growth**:\n     - Series A: 3-5× MOIC target, 25-35% IRR\n     - Series B: 2.5-4× MOIC target, 20-30% IRR\n   - **Credit**:\n     - Bridge loans: 10-15% IRR, 1.20×+ DSCR\n     - Mezzanine: 12-18% IRR\n\n4. **Risk Aggregation**: Identify recurring risk patterns across documents and escalate systemic issues\n\n5. **Portfolio Context**: Consider portfolio diversification, concentration limits, and strategic fit\n\n6. **IC Summary Generation**: Produce concise investment committee summary with recommendation\n\n**Scoring Methodology:**\n\n1. **Collect Documents**: Search for all documents related to the deal\n2. **Extract Analyses**: Retrieve alpha scores and signals from each document\n3. **Weight Scores**: Apply document type weights\n4. **Calculate Aggregate**: Weighted average of alpha scores\n5. **Adjust for Risk**: Downgrade for severe or recurring risks\n6. **Compare to Benchmarks**: Flag deals outside normal ranges\n7. **Rank in Portfolio**: Top tier, mid-pack, or decline\n\n**Critical Analysis Points:**\n\n- **Signal Consistency**: Do multiple documents tell the same story?\n- **Red Flag Escalation**: Single severe risk can override positive signals\n- **Sponsor Track Record**: Historical performance matters\n- **Market Timing**: Asset class cycle position\n- **Portfolio Fit**: Diversification and concentration\n\n**MCP Tool Usage:**\n\n1. `search_knowledge_base`: Find all documents for a deal\n2. `lookup_entity`: Get deal entity with linked analyses\n3. `traverse_graph`: Find related entities (sponsor track record, market comps)\n4. `create_moment`: Record scoring decision with timestamp\n\n**Output Requirements:**\n\nProvide:\n- Aggregated alpha score with methodology\n- Document-by-document breakdown\n- Risk summary with materiality\n- Benchmark comparison\n- Portfolio fit assessment\n- IC recommendation with concise summary",
+  "result_schema": {
+    "type": "object",
+    "properties": {
+      "deal_id": {
+        "type": "string",
+        "description": "Deal identifier (e.g., 'deal:IRW-001')"
+      },
+      "deal_name": {
+        "type": "string",
+        "description": "Name of the deal"
+      },
+      "documents_analyzed": {
+        "type": "array",
+        "description": "List of documents analyzed for this deal",
+        "items": {
+          "type": "object",
+          "properties": {
+            "document_id": {
+              "type": "string",
+              "description": "Document identifier"
+            },
+            "document_type": {
+              "type": "string",
+              "description": "Type of document (e.g., 'Underwriting Memo', 'Email Chain', 'Term Sheet')"
+            },
+            "alpha_score": {
+              "type": "number",
+              "description": "Alpha score from this document (-10 to +10)"
+            },
+            "weight": {
+              "type": "number",
+              "description": "Weight applied to this document (0.0-1.0)"
+            },
+            "key_findings": {
+              "type": "string",
+              "description": "Brief summary of key findings from this document"
+            }
+          },
+          "required": ["document_id", "document_type", "alpha_score", "weight"]
+        }
+      },
+      "aggregated_alpha_score": {
+        "type": "number",
+        "minimum": -10,
+        "maximum": 10,
+        "description": "Weighted aggregate alpha score across all documents"
+      },
+      "scoring_methodology": {
+        "type": "string",
+        "description": "Explanation of how the aggregate score was calculated, including weighting rationale and any adjustments"
+      },
+      "risk_summary": {
+        "type": "object",
+        "description": "Aggregated risk assessment across all documents",
+        "properties": {
+          "critical_risks": {
+            "type": "array",
+            "items": {"type": "string"},
+            "description": "List of critical risks that could be deal-breakers"
+          },
+          "recurring_risks": {
+            "type": "array",
+            "items": {"type": "string"},
+            "description": "Risks mentioned across multiple documents (pattern recognition)"
+          },
+          "overall_materiality": {
+            "type": "string",
+            "enum": ["Low", "Moderate", "High", "Severe"],
+            "description": "Overall risk materiality"
+          }
+        },
+        "required": ["critical_risks", "recurring_risks", "overall_materiality"]
+      },
+      "benchmark_comparison": {
+        "type": "object",
+        "description": "Comparison to asset class benchmarks",
+        "properties": {
+          "asset_class": {
+            "type": "string",
+            "description": "Primary asset class for this deal"
+          },
+          "benchmark_ranges": {
+            "type": "object",
+            "description": "Expected benchmark ranges for this asset class",
+            "additionalProperties": {"type": "string"}
+          },
+          "deal_metrics": {
+            "type": "object",
+            "description": "Actual deal metrics",
+            "additionalProperties": {"type": "string"}
+          },
+          "variance_analysis": {
+            "type": "string",
+            "description": "Analysis of how deal metrics compare to benchmarks (above/below/in-line)"
+          }
+        },
+        "required": ["asset_class", "benchmark_ranges", "deal_metrics", "variance_analysis"]
+      },
+      "portfolio_context": {
+        "type": "object",
+        "description": "How this deal fits within the broader portfolio",
+        "properties": {
+          "strategic_fit": {
+            "type": "string",
+            "description": "How this deal aligns with portfolio strategy and asset allocation targets"
+          },
+          "concentration_impact": {
+            "type": "string",
+            "description": "Impact on portfolio concentration (geography, asset class, sponsor)"
+          },
+          "diversification_value": {
+            "type": "string",
+            "description": "Whether this deal adds meaningful diversification"
+          }
+        },
+        "required": ["strategic_fit", "concentration_impact", "diversification_value"]
+      },
+      "recommendation": {
+        "type": "string",
+        "enum": [
+          "Strong Recommend - Top Tier",
+          "Recommend - Above Average",
+          "Neutral - Borderline",
+          "Pass - Below Standard",
+          "Strong Pass - Decline"
+        ],
+        "description": "Investment committee recommendation"
+      },
+      "ic_summary": {
+        "type": "string",
+        "description": "Concise 2-4 sentence summary for investment committee presentation. Include: (1) deal name and structure, (2) key strengths or weaknesses, (3) alpha score and rationale, (4) recommendation. Example: 'Greenline Wind Phase I: 200 MW wind project in Wyoming with strong sponsor track record (850 MW operational). Contracted revenues at favorable rates, self-financed expansion provides hidden value (+5.2 alpha). Strong recommend for IC approval.'"
+      }
+    },
+    "required": [
+      "deal_id",
+      "deal_name",
+      "documents_analyzed",
+      "aggregated_alpha_score",
+      "scoring_methodology",
+      "risk_summary",
+      "benchmark_comparison",
+      "portfolio_context",
+      "recommendation",
+      "ic_summary"
+    ]
+  },
+  "mcp_tools": [
+    "search_knowledge_base",
+    "lookup_entity",
+    "traverse_graph",
+    "create_moment"
+  ]
+}

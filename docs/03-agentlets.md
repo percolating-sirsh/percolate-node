@@ -97,9 +97,44 @@ print(result.output)  # {"answer": "4", "confidence": 1.0, ...}
 The factory handles:
 
 1. **Schema Dumper**: Strips model description from LLM schema to avoid duplication with system prompt
-2. **Dynamic Model Creation**: Converts JSON schemas to Pydantic models on-the-fly
+2. **Dynamic Model Creation**: Converts JSON schemas to Pydantic models on-the-fly using `json-schema-to-pydantic`
 3. **MCP Tool Loading**: Dynamically attaches tools from schema metadata
 4. **OpenTelemetry**: Optional tracing (disabled by default)
+
+#### JSON Schema to Pydantic Model Conversion
+
+The factory uses the **`json-schema-to-pydantic`** library for robust schema deserialization:
+
+- **Battle-tested conversion**: Handles complex JSON Schema specifications correctly
+- **Nested structures**: Arrays of arrays, deeply nested objects, recursive definitions
+- **Complex types**: `$ref`, `anyOf`, `allOf`, `oneOf`, `not` combinators
+- **Field constraints**: `minimum`, `maximum`, `minLength`, `maxLength`, `pattern`, `enum`
+- **Required vs optional**: Proper handling of required fields and default values
+- **Type preservation**: Accurate mapping from JSON Schema types to Python type hints
+
+This replaces a previous custom parser that only handled basic types. The library approach provides:
+- ✅ Support for arbitrarily complex schemas
+- ✅ Correct validation of all constraint types
+- ✅ Proper handling of recursive and self-referencing schemas
+- ✅ Consistency with industry-standard JSON Schema specification
+
+**Example**: A complex nested schema like this:
+```json
+{
+  "properties": {
+    "resources": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "metadata": {"type": "object"}
+        }
+      }
+    }
+  }
+}
+```
+Is automatically converted to the equivalent Pydantic model with proper typing and validation.
 
 **Key Insight**: The model's docstring **IS** the system prompt. We strip the description from the JSON schema sent to the LLM to avoid redundancy:
 

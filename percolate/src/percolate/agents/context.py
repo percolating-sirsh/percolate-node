@@ -1,5 +1,6 @@
 """Agent execution context for configuration and state propagation."""
 
+from typing import Any
 from pydantic import BaseModel, Field
 
 
@@ -17,6 +18,8 @@ class AgentContext(BaseModel):
         device_id: Optional device identifier for auth tracking
         default_model: LLM model to use for agent execution
         agent_schema_uri: URI to agent-let schema (e.g., 'researcher')
+        project_name: Optional project identifier for session metadata
+        metadata: Additional context metadata (arbitrary key-value pairs)
     """
 
     user_id: str | None = Field(
@@ -42,6 +45,55 @@ class AgentContext(BaseModel):
         default=None,
         description="Agent-let schema URI (e.g., 'researcher', 'classifier')"
     )
+    project_name: str | None = Field(
+        default=None,
+        description="Project identifier for grouping sessions (from X-Project-Name)"
+    )
+    metadata: dict[str, Any] = Field(
+        default_factory=dict,
+        description="Additional context metadata (arbitrary key-value pairs)"
+    )
+
+    def get_session_metadata(self) -> dict[str, Any]:
+        """Extract metadata for session storage.
+
+        Returns a subset of context fields suitable for storing with sessions.
+        Useful for later analysis when generating moments or analytics.
+
+        Returns:
+            Dictionary with project, model, agent, and custom metadata
+
+        Example:
+            >>> ctx = AgentContext(
+            ...     tenant_id="tenant-123",
+            ...     project_name="alpha-deals",
+            ...     metadata={"source": "cli"}
+            ... )
+            >>> ctx.get_session_metadata()
+            {'project': 'alpha-deals', 'source': 'cli'}
+        """
+        session_meta: dict[str, Any] = {}
+
+        # Add project name if available
+        if self.project_name:
+            session_meta["project"] = self.project_name
+
+        # Add model info
+        if self.default_model:
+            session_meta["model"] = self.default_model
+
+        # Add agent info
+        if self.agent_schema_uri:
+            session_meta["agent"] = self.agent_schema_uri
+
+        # Add device if tracking
+        if self.device_id:
+            session_meta["device_id"] = self.device_id
+
+        # Merge in custom metadata
+        session_meta.update(self.metadata)
+
+        return session_meta
 
     @classmethod
     def from_headers(cls, headers: dict[str, str], tenant_id: str) -> "AgentContext":
@@ -53,6 +105,7 @@ class AgentContext(BaseModel):
         - X-Device-Id → device_id
         - X-Model-Name → default_model
         - X-Agent-Schema → agent_schema_uri
+        - X-Project-Name → project_name
 
         Args:
             headers: HTTP request headers (case-insensitive)
@@ -62,10 +115,14 @@ class AgentContext(BaseModel):
             AgentContext with extracted values
 
         Example:
-            >>> headers = {"X-User-Id": "user-123", "X-Model-Name": "claude-opus-4"}
+            >>> headers = {
+            ...     "X-User-Id": "user-123",
+            ...     "X-Model-Name": "claude-opus-4",
+            ...     "X-Project-Name": "alpha-deals"
+            ... }
             >>> ctx = AgentContext.from_headers(headers, tenant_id="tenant-abc")
-            >>> ctx.user_id
-            'user-123'
+            >>> ctx.project_name
+            'alpha-deals'
         """
         normalized = {k.lower(): v for k, v in headers.items()}
         return cls(
@@ -75,4 +132,5 @@ class AgentContext(BaseModel):
             device_id=normalized.get("x-device-id"),
             default_model=normalized.get("x-model-name", "claude-sonnet-4.5"),
             agent_schema_uri=normalized.get("x-agent-schema"),
+            project_name=normalized.get("x-project-name"),
         )

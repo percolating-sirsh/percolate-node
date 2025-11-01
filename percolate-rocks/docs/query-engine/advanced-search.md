@@ -99,12 +99,16 @@ Complexity: O(log n)
 
 ### Performance
 
-| Metric | Value |
-|--------|-------|
-| Search latency | <1ms (typical) |
-| Build time | ~30s (1M vectors) |
-| Memory | ~1.5KB per vector |
-| **Total (1M, 384d)** | **~1.5GB RAM** |
+| Metric | Value | Notes |
+|--------|-------|-------|
+| Search latency | <1ms | Small datasets (<100k vectors) |
+| Search latency | 1-5ms | Medium datasets (100k-1M vectors) |
+| Search latency | 5-10ms | Large datasets (>1M vectors) |
+| Build time | ~30s (1M vectors) | Parallel construction |
+| Memory | ~1.5KB per vector | Graph + vector storage |
+| **Total (1M, 384d)** | **~1.5GB RAM** | Full in-memory index |
+
+**Scaling:** Latency increases with dataset size due to longer graph traversal paths. For >1M vectors, consider [tiered search](#3-tiered-search-hybrid-hnsw--diskann) to reduce memory and maintain <2ms average latency.
 
 ### Usage
 
@@ -1281,6 +1285,21 @@ pub fn two_stage_search(
 **Estimated time:** 1-2 weeks
 
 ---
+
+## See Also
+
+### Query Engine Documentation
+
+- **[QUERY_LLM_QUICKSTART.md](QUERY_LLM_QUICKSTART.md)** - LLM configuration guide
+- **[query-translation-architecture.md](query-translation-architecture.md)** - How queries are generated and executed
+- **[sql-dialect.md](sql-dialect.md)** - SEARCH syntax and usage examples
+- **[iterated-retrieval.md](iterated-retrieval.md)** - Multi-stage query execution
+
+### Implementation Files
+
+- **[hnsw.rs](../../src/index/hnsw.rs)** - HNSW vector index implementation
+- **[diskann/](../../src/index/diskann/)** - DiskANN implementation
+- **[tiered.rs](../../src/index/tiered.rs)** - Tiered search (HNSW + DiskANN)
 
 ## References
 

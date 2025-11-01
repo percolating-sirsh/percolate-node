@@ -115,8 +115,9 @@ impl ProviderFactory {
                 }
 
                 let api_key = std::env::var("P8_OPENAI_API_KEY")
+                    .or_else(|_| std::env::var("OPENAI_API_KEY"))
                     .map_err(|_| DatabaseError::ConfigError(
-                        "P8_OPENAI_API_KEY environment variable not set".to_string()
+                        "OPENAI_API_KEY or P8_OPENAI_API_KEY environment variable not set".to_string()
                     ))?;
 
                 let model = parts[1].to_string();

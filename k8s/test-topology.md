@@ -18,7 +18,8 @@ This test topology focuses on **validating the distributed database behavior**:
 - **Database nodes** - API pods with mock RocksDB
 - **Worker nodes** - Background job processors
 - **Istio** - Consistent hashing + locality routing
-- **KEDA** - Dual scaling triggers (Prometheus + NATS)
+- **KEDA
+- ** - Dual scaling triggers (Prometheus + NATS)
 - **Prometheus** - Metrics for database node scaling
 
 **What we skip** (not needed for topology testing):

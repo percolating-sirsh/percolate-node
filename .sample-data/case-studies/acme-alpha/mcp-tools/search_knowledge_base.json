@@ -1,0 +1,105 @@
+{
+  "name": "search_knowledge_base",
+  "description": "Search the REM knowledge base across different schemas (resources, entities, moments, trends). Use schema parameter to target specific data types. Returns ranked results with relevance scores.",
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "query": {
+        "type": "string",
+        "description": "Search query. Examples: 'industrial warehouse deals', 'NCREIF apartment returns', 'wind energy Wyoming', 'population growth Austin'"
+      },
+      "schema": {
+        "type": "string",
+        "enum": [
+          "resources",
+          "entities",
+          "moments",
+          "trends",
+          "all"
+        ],
+        "default": "all",
+        "description": "Target schema to search. 'resources' = documents/chunks with embeddings (semantic search), 'entities' = sponsors/properties/deals (structured data), 'moments' = timestamped events/analyses, 'trends' = time series benchmarks (NCREIF, CBSA, energy prices, rates), 'all' = search across all schemas"
+      },
+      "filters": {
+        "type": "object",
+        "description": "Optional filters. For trends: {category, sub_category, key, start_date, end_date}. For entities: {entity_type, properties}. For resources: {resource_type, date_range}.",
+        "additionalProperties": true
+      },
+      "limit": {
+        "type": "integer",
+        "default": 10,
+        "description": "Maximum number of results to return"
+      },
+      "tenant_id": {
+        "type": "string",
+        "default": "felix-prime",
+        "description": "Tenant scope for multi-tenant deployments"
+      }
+    },
+    "required": ["query"]
+  },
+  "examples": [
+    {
+      "description": "Search for industrial warehouse deals (semantic search on documents)",
+      "input": {
+        "query": "industrial warehouse Columbus Ohio",
+        "schema": "resources",
+        "limit": 5
+      }
+    },
+    {
+      "description": "Search for entities by name or type",
+      "input": {
+        "query": "Greenline Renewables sponsor track record",
+        "schema": "entities",
+        "filters": {
+          "entity_type": "sponsor"
+        }
+      }
+    },
+    {
+      "description": "Search time series trends for NCREIF apartment cap rates",
+      "input": {
+        "query": "apartment cap rate",
+        "schema": "trends",
+        "filters": {
+          "category": "property_benchmark",
+          "sub_category": "Apartment",
+          "key": "cap_rate_pct",
+          "start_date": "2024-01-01",
+          "end_date": "2024-09-30"
+        }
+      }
+    },
+    {
+      "description": "Search for recent deal analyses (moments)",
+      "input": {
+        "query": "office deal analysis",
+        "schema": "moments",
+        "filters": {
+          "moment_type": "deal_analysis"
+        },
+        "limit": 5
+      }
+    },
+    {
+      "description": "Search across all schemas",
+      "input": {
+        "query": "Wyoming wind energy projects",
+        "schema": "all",
+        "limit": 20
+      }
+    }
+  ],
+  "notes": [
+    "Schema-aware search routes queries to appropriate indexes:",
+    "  - resources: Vector similarity search (embeddings) + full-text",
+    "  - entities: Property matching + fuzzy name search + graph traversal",
+    "  - moments: Temporal index + event type filtering",
+    "  - trends: Time series index (category + sub_category + key + date range)",
+    "  - all: Federated search across all schemas with score fusion",
+    "",
+    "To discover available schemas, use MCP resource: schema://list",
+    "To get schema specifications, use MCP resource: schema://spec/<name>"
+  ]
+}

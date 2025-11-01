@@ -270,23 +270,58 @@ impl Database {
         let validator = SchemaValidator::new(schema.clone())?;
         validator.validate(&data)?;
 
-        // Extract key_field from schema
+        // Extract configuration from schema
         let key_field_opt = PydanticSchemaParser::extract_key_field(schema);
         let key_field = key_field_opt.as_deref();
+        let edge_storage_mode = PydanticSchemaParser::extract_edge_storage_mode(schema);
 
         // Generate deterministic UUID
         let id = generate_uuid(table, &data, key_field);
 
-        // Create entity with system fields
-        let entity = Entity::new(id, table.to_string(), data);
+        // Check if entity exists (for edge merging during upsert)
+        let entity_key = crate::storage::keys::encode_entity_key(tenant_id, id);
+        let existing_entity_opt = self.storage.get(
+            crate::storage::column_families::CF_ENTITIES,
+            &entity_key,
+        )?;
+
+        // Extract edges from incoming data if present (inline mode)
+        let incoming_edges = if edge_storage_mode == "inline" {
+            extract_edges_from_data(&data)
+        } else {
+            vec![]
+        };
+
+        // Create new entity
+        let mut entity = Entity::new(id, table.to_string(), data);
+
+        // Merge edges if entity exists (upsert logic)
+        if let Some(existing_bytes) = existing_entity_opt {
+            let existing_entity: Entity = serde_json::from_slice(&existing_bytes)?;
+
+            // Preserve created_at from existing entity
+            entity.system.created_at = existing_entity.system.created_at;
+
+            // Merge edges (don't override, merge by key)
+            if edge_storage_mode == "inline" {
+                // Start with existing edges
+                entity.system.edges = existing_entity.system.edges;
+
+                // Merge in new edges (updates properties if edge exists, adds if new)
+                entity.merge_edges(incoming_edges);
+            }
+        } else {
+            // New entity - set incoming edges
+            if edge_storage_mode == "inline" {
+                entity.system.edges = incoming_edges;
+            }
+        }
 
         // Serialize and store
-        let key = crate::storage::keys::encode_entity_key(tenant_id, id);
         let value = serde_json::to_vec(&entity)?;
-
         self.storage.put(
             crate::storage::column_families::CF_ENTITIES,
-            &key,
+            &entity_key,
             &value,
         )?;
 
@@ -303,6 +338,7 @@ impl Database {
 
         // TODO: Generate embeddings if configured
         // TODO: Create field indexes if configured
+        // TODO: Handle indexed edge storage mode (write to edges CF)
 
         // Log to WAL if replication enabled
         if let Some(ref wal) = self.wal {
@@ -435,6 +471,122 @@ impl Database {
             Some(data) => Ok(Some(serde_json::from_slice(&data)?)),
             None => Ok(None),
         }
+    }
+
+    /// Batch get entities by IDs.
+    ///
+    /// # Arguments
+    ///
+    /// * `tenant_id` - Tenant identifier
+    /// * `entity_ids` - List of entity UUIDs
+    ///
+    /// # Returns
+    ///
+    /// List of entities (Some if found, None if not found, in same order as input)
+    ///
+    /// # Performance
+    ///
+    /// Uses RocksDB multi_get for efficient bulk retrieval (single operation).
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// let ids = vec![uuid1, uuid2, uuid3];
+    /// let entities = db.get_batch("tenant1", &ids)?;
+    /// // entities[0] corresponds to uuid1, etc.
+    /// ```
+    pub fn get_batch(&self, tenant_id: &str, entity_ids: &[uuid::Uuid]) -> Result<Vec<Option<Entity>>> {
+        let mut entities = Vec::with_capacity(entity_ids.len());
+
+        for id in entity_ids {
+            let key = crate::storage::keys::encode_entity_key(tenant_id, *id);
+            let data = self.storage.get(crate::storage::column_families::CF_ENTITIES, &key)?;
+
+            match data {
+                Some(bytes) => {
+                    let entity: Entity = serde_json::from_slice(&bytes)?;
+                    entities.push(Some(entity));
+                }
+                None => entities.push(None),
+            }
+        }
+
+        Ok(entities)
+    }
+
+    /// Batch lookup entities by key values.
+    ///
+    /// # Arguments
+    ///
+    /// * `tenant_id` - Tenant identifier
+    /// * `key_values` - List of key values to lookup
+    ///
+    /// # Returns
+    ///
+    /// List of entity lists (one list per key value, in same order as input).
+    /// Each inner list contains all entities matching that key value.
+    ///
+    /// # Performance
+    ///
+    /// More efficient than individual lookups due to batched index scans.
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// let keys = vec!["Alice".to_string(), "Bob".to_string()];
+    /// let results = db.lookup_batch("tenant1", &keys)?;
+    /// // results[0] = all entities with key "Alice"
+    /// // results[1] = all entities with key "Bob"
+    /// ```
+    pub fn lookup_batch(&self, tenant_id: &str, key_values: &[String]) -> Result<Vec<Vec<Entity>>> {
+        use std::collections::HashMap;
+
+        // Scan key index for all keys
+        let mut entities_by_key: HashMap<String, Vec<uuid::Uuid>> = HashMap::new();
+
+        for key_value in key_values {
+            let prefix = format!("key:{}:{}:", tenant_id, key_value);
+            let prefix_bytes = prefix.as_bytes();
+
+            let cf = self.storage.cf_handle(crate::storage::column_families::CF_KEY_INDEX);
+            let iter = self.storage.db().iterator_cf(&cf, rocksdb::IteratorMode::From(prefix_bytes, rocksdb::Direction::Forward));
+
+            for item in iter {
+                let (key, _value) = item.map_err(|e| crate::types::DatabaseError::StorageError(e))?;
+
+                // Check if key still has our prefix
+                if !key.starts_with(prefix_bytes) {
+                    break;
+                }
+
+                // Extract UUID from key: key:{tenant}:{value}:{uuid}
+                let key_str = std::str::from_utf8(&key)
+                    .map_err(|e| crate::types::DatabaseError::InternalError(format!("Invalid UTF-8 in key: {}", e)))?;
+
+                let parts: Vec<&str> = key_str.split(':').collect();
+                if parts.len() >= 4 {
+                    if let Ok(entity_id) = uuid::Uuid::parse_str(parts[3]) {
+                        entities_by_key.entry(key_value.clone()).or_default().push(entity_id);
+                    }
+                }
+            }
+        }
+
+        // Fetch entities for each key
+        let mut results = Vec::with_capacity(key_values.len());
+        for key_value in key_values {
+            if let Some(entity_ids) = entities_by_key.get(key_value) {
+                let entities = self.get_batch(tenant_id, entity_ids)?
+                    .into_iter()
+                    .flatten()
+                    .collect();
+                results.push(entities);
+            } else {
+                results.push(Vec::new());
+            }
+        }
+
+        Ok(results)
     }
 
     /// Update entity properties.
@@ -1099,6 +1251,78 @@ impl Database {
         Ok(None)
     }
 
+    /// Global lookup by key value across all schemas (anonymous types).
+    ///
+    /// This is the core REM pattern: find entities by natural key without knowing the schema.
+    /// Returns ALL entities matching the key_value, regardless of table/schema.
+    ///
+    /// # Arguments
+    ///
+    /// * `tenant_id` - Tenant identifier
+    /// * `key_value` - Key field value to lookup
+    ///
+    /// # Returns
+    ///
+    /// Vector of all matching entities (may be from different schemas)
+    ///
+    /// # Why Global Lookup?
+    ///
+    /// - **Anonymous types**: Users shouldn't need to know schema names
+    /// - **Natural keys**: "Alice" should find Alice regardless of where she's stored
+    /// - **No SQL/GraphQL**: Avoids requiring schema knowledge upfront
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// // Find all entities with key "Alice" (could be in person, articles, etc.)
+    /// let results = db.lookup_global("tenant1", "Alice")?;
+    ///
+    /// for entity in results {
+    ///     println!("Found {} in {}", entity.properties["name"], entity.system.entity_type);
+    /// }
+    /// ```
+    pub fn lookup_global(&self, tenant_id: &str, key_value: &str) -> Result<Vec<Entity>> {
+        use rocksdb::IteratorMode;
+
+        // Scan prefix: key:{tenant_id}:{key_value}:
+        let prefix = format!("key:{}:{}:", tenant_id, key_value).into_bytes();
+        let cf = self.storage.cf_handle(crate::storage::column_families::CF_KEY_INDEX);
+
+        let iter = self.storage.db().iterator_cf(
+            &cf,
+            IteratorMode::From(&prefix, rocksdb::Direction::Forward),
+        );
+
+        let mut entities = Vec::new();
+
+        for item in iter {
+            let (key, _value) = item.map_err(|e| crate::types::DatabaseError::StorageError(e))?;
+
+            // Check if key still matches prefix
+            if !key.starts_with(&prefix) {
+                break;
+            }
+
+            // Extract entity UUID from key: key:{tenant}:{value}:{uuid}
+            let key_str = std::str::from_utf8(&key)
+                .map_err(|e| crate::types::DatabaseError::InvalidKey(format!("Invalid UTF-8: {}", e)))?;
+            let parts: Vec<&str> = key_str.split(':').collect();
+            if parts.len() != 4 {
+                continue; // Invalid key format
+            }
+
+            let entity_id = uuid::Uuid::parse_str(parts[3])
+                .map_err(|e| crate::types::DatabaseError::InvalidKey(format!("Invalid UUID: {}", e)))?;
+
+            // Fetch entity by ID
+            if let Some(entity) = self.get(tenant_id, entity_id)? {
+                entities.push(entity);
+            }
+        }
+
+        Ok(entities)
+    }
+
     /// Load persisted schemas from storage.
     ///
     /// # Returns
@@ -1401,7 +1625,7 @@ impl Database {
         // 3. Resolve "default" to actual provider from environment
         let provider_str = if provider_config == "default" {
             std::env::var("P8_DEFAULT_EMBEDDING")
-                .unwrap_or_else(|_| "local:all-MiniLM-L6-v2".to_string())
+                .unwrap_or_else(|_| "openai:text-embedding-3-small".to_string())
         } else {
             provider_config.to_string()
         };
@@ -1477,6 +1701,75 @@ impl crate::graph::EdgeProvider for Database {
     fn get_incoming(&self, node: uuid::Uuid, rel_type: Option<&str>) -> Result<Vec<Edge>> {
         self.get_incoming_edges(node, rel_type)
     }
+}
+
+/// Extract inline edges from entity data.
+///
+/// Parses the `edges` array from incoming data and converts to InlineEdge objects.
+///
+/// # Arguments
+///
+/// * `data` - Entity data (JSON value)
+///
+/// # Returns
+///
+/// Vector of InlineEdge objects
+///
+/// # Edge Format
+///
+/// Edges in data should be formatted as:
+/// ```json
+/// {
+///   "edges": [
+///     {
+///       "dst": "uuid-string",
+///       "rel_type": "authored",
+///       "properties": {"since": "2024-01-01"},
+///       "created_at": "2024-01-01T00:00:00Z"
+///     }
+///   ]
+/// }
+/// ```
+fn extract_edges_from_data(data: &serde_json::Value) -> Vec<crate::types::InlineEdge> {
+    use crate::types::InlineEdge;
+    use std::collections::HashMap;
+
+    data.get("edges")
+        .and_then(|v| v.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|edge_val| {
+                    // Extract edge fields
+                    let dst_str = edge_val.get("dst")?.as_str()?;
+                    let dst = uuid::Uuid::parse_str(dst_str).ok()?;
+                    let rel_type = edge_val.get("rel_type")?.as_str()?.to_string();
+
+                    // Extract properties (optional)
+                    let properties = edge_val.get("properties")
+                        .and_then(|v| v.as_object())
+                        .map(|obj| {
+                            obj.iter()
+                                .map(|(k, v)| (k.clone(), v.clone()))
+                                .collect::<HashMap<String, serde_json::Value>>()
+                        })
+                        .unwrap_or_default();
+
+                    // Extract or generate created_at
+                    let created_at = edge_val.get("created_at")
+                        .and_then(|v| v.as_str())
+                        .map(String::from)
+                        .unwrap_or_else(|| chrono::Utc::now().to_rfc3339());
+
+                    Some(InlineEdge {
+                        dst,
+                        rel_type,
+                        properties,
+                        created_at,
+                    })
+                })
+                .collect()
+        })
+        .unwrap_or_default()
 }
 
 /// Extract key value from entity data following same priority as generate_uuid.

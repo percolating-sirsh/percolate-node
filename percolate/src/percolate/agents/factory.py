@@ -9,10 +9,11 @@ Key patterns from carrier reference:
 
 from __future__ import annotations
 
-from typing import Any, List
+from typing import Any
 
+from json_schema_to_pydantic import PydanticModelBuilder
 from loguru import logger
-from pydantic import BaseModel, create_model, Field
+from pydantic import BaseModel
 from pydantic_ai import Agent
 from pydantic_ai.models import KnownModelName, Model
 
@@ -27,51 +28,50 @@ from percolate.otel import (
 from percolate.settings import settings
 
 
-def _create_model_from_schema(json_schema: dict[str, Any]) -> type[BaseModel]:
-    """Create a dynamic Pydantic model from JSON Schema.
+def _create_model_from_schema(agent_schema: dict[str, Any]) -> type[BaseModel]:
+    """Create Pydantic model dynamically from agent schema using json-schema-to-pydantic.
 
-    Converts agent-let JSON schema to a Pydantic model for structured output.
-    Handles basic types (string, number, boolean, array) and required fields.
+    Uses the json-schema-to-pydantic library for robust conversion that properly handles:
+    - Nested objects and arrays
+    - Complex type definitions ($ref, anyOf, allOf, etc.)
+    - Required fields and defaults
+    - Field descriptions and constraints
+    - Recursive schema definitions
 
     Args:
-        json_schema: JSON Schema dict with properties and required fields
+        agent_schema: Agent schema dict (JSON Schema format)
 
     Returns:
-        Dynamically created Pydantic model class
+        Dynamically created Pydantic BaseModel class
+
+    Example:
+        >>> schema = {
+        ...     "title": "ResearchAgent",
+        ...     "type": "object",
+        ...     "properties": {
+        ...         "findings": {"type": "array", "items": {"type": "string"}},
+        ...         "confidence": {"type": "number", "minimum": 0.0, "maximum": 1.0}
+        ...     }
+        ... }
+        >>> Model = _create_model_from_schema(schema)
+        >>> instance = Model(findings=["fact 1", "fact 2"], confidence=0.9)
     """
-    properties = json_schema.get("properties", {})
-    required = json_schema.get("required", [])
-    model_name = json_schema.get("title", "DynamicAgent")
+    # Use json-schema-to-pydantic library for robust conversion
+    # Handles nested objects, arrays, required fields, complex types, etc.
+    builder = PydanticModelBuilder()
+    model = builder.create_pydantic_model(agent_schema, root_schema=agent_schema)
 
-    # Map JSON schema types to Python types
-    type_map = {
-        "string": str,
-        "number": float,
-        "integer": int,
-        "boolean": bool,
-        "array": list,
-        "object": dict,
-    }
+    # Override model name with FQN if available (carrier pattern)
+    fqn = agent_schema.get("fully_qualified_name")
+    if fqn:
+        class_name = fqn.rsplit(".", 1)[-1]
+        model.__name__ = class_name
+    # Fallback to title if no FQN (percolate pattern)
+    elif "title" in agent_schema:
+        model.__name__ = agent_schema["title"]
 
-    # Build field definitions for create_model
-    field_definitions = {}
-    for field_name, field_spec in properties.items():
-        field_type = type_map.get(field_spec.get("type", "string"), str)
-        field_description = field_spec.get("description", "")
-
-        # Handle array types with items
-        if field_spec.get("type") == "array" and "items" in field_spec:
-            item_type = type_map.get(field_spec["items"].get("type", "string"), str)
-            field_type = List[item_type]  # type: ignore
-
-        # Determine if required
-        if field_name in required:
-            field_definitions[field_name] = (field_type, Field(description=field_description))
-        else:
-            field_definitions[field_name] = (field_type | None, Field(default=None, description=field_description))
-
-    # Create dynamic model
-    return create_model(model_name, **field_definitions)
+    logger.debug(f"Created dynamic Pydantic model from schema: {model.__name__}")
+    return model
 
 
 def _create_schema_wrapper(result_type: type[BaseModel], strip_description: bool = True) -> type[BaseModel]:
@@ -233,7 +233,22 @@ async def _build_mcp_tools(tool_configs: list[dict[str, str]]) -> list:
             server_tools = _build_local_tools(tool_config_list)
             tools.extend(server_tools)
         else:
-            # Remote server -> not yet implemented
+            # TODO: Remote server -> query MCP server for tool schemas
+            # Should work like this:
+            # 1. Look up server URL from env vars (e.g., MCP_SERVER_{NAME}_URL)
+            # 2. Connect to MCP server (HTTP/SSE transport)
+            # 3. Query tools/list endpoint to get available tools
+            # 4. For each tool in tool_config_list, get schema from server
+            # 5. Create Pydantic AI Tool that proxies calls to remote server
+            #
+            # Example:
+            #   server_url = os.getenv(f"MCP_SERVER_{server_name.upper()}_URL")
+            #   async with MCPClient(server_url) as client:
+            #       available_tools = await client.list_tools()
+            #       for tool_config in tool_config_list:
+            #           tool_schema = available_tools[tool_config["tool_name"]]
+            #           tool = create_remote_tool(client, tool_schema)
+            #           server_tools.append(tool)
             logger.warning(f"Remote MCP server '{server_name}' not yet supported")
 
     return tools
@@ -251,8 +266,21 @@ def _build_local_tools(tool_configs: list[dict[str, str]]) -> list:
     Returns:
         List of Tool instances
     """
-    # Import MCP tools (add more as needed)
-    # TODO: Dynamic import based on tool_name
+    # TODO: MCP servers should advertise their tools via the MCP protocol (tools/list).
+    # This manual import approach does NOT scale and breaks for remote servers.
+    #
+    # Proper implementation:
+    # 1. Query MCP server for available tools: GET /mcp/tools/list
+    # 2. Server returns tool schemas (name, description, parameters, return type)
+    # 3. Dynamically create Pydantic AI tools from schemas
+    # 4. Works for both local AND remote MCP servers
+    #
+    # Current approach only works for local Python imports - won't work for:
+    # - Remote MCP servers over HTTP/SSE
+    # - MCP servers in different languages
+    # - Third-party MCP servers
+    #
+    # See: https://spec.modelcontextprotocol.io/specification/server/tools/
     mcp_tools = {}
 
     # Try to import common MCP tools
@@ -261,6 +289,12 @@ def _build_local_tools(tool_configs: list[dict[str, str]]) -> list:
         mcp_tools["search_knowledge_base"] = search_knowledge_base
     except ImportError:
         logger.debug("search_knowledge_base tool not available")
+
+    try:
+        from percolate.mcplib.tools import lookup_entity
+        mcp_tools["lookup_entity"] = lookup_entity
+    except ImportError:
+        logger.debug("lookup_entity tool not available")
 
     try:
         from percolate.mcplib.tools import parse_document

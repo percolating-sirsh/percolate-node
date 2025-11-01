@@ -31,6 +31,7 @@ async def chat_completions(
     x_tenant_id: str = Header(default="default", alias="X-Tenant-Id"),
     x_session_id: str | None = Header(default=None, alias="X-Session-Id"),
     x_user_id: str | None = Header(default=None, alias="X-User-Id"),
+    x_project_name: str | None = Header(default=None, alias="X-Project-Name"),
     session_store: SessionStore | None = Depends(get_session_store),
 ):
     """
@@ -68,6 +69,7 @@ async def chat_completions(
     | X-Tenant-Id | No | Tenant identifier (default: "default") |
     | X-Session-Id | No | Session ID for conversation tracking |
     | X-User-Id | No | User identifier for attribution |
+    | X-Project-Name | No | Project name for session grouping |
 
     ## Request Body
 
@@ -110,6 +112,17 @@ async def chat_completions(
     )
 
     try:
+        # Create agent context first (needed for metadata)
+        context = AgentContext(
+            tenant_id=x_tenant_id,
+            session_id=x_session_id,
+            user_id=x_user_id,
+            agent_schema_uri=agent_uri,
+            default_model=body.model if body.agent_uri else None,
+            project_name=x_project_name,
+            metadata={"source": "api"},
+        )
+
         # Save user message to session (if tracking enabled)
         if session_store and x_session_id:
             session_store.save_message(
@@ -118,20 +131,13 @@ async def chat_completions(
                 role="user",
                 content=prompt,
                 agent_uri=agent_uri,
+                metadata=context.get_session_metadata(),
             )
+
         # Load agent schema
         agent_schema = load_agentlet_schema(
             uri=agent_uri,
             tenant_id=x_tenant_id
-        )
-
-        # Create agent context
-        context = AgentContext(
-            tenant_id=x_tenant_id,
-            session_id=x_session_id,
-            user_id=x_user_id,
-            agent_schema_uri=agent_uri,
-            default_model=body.model if body.agent_uri else None,
         )
 
         # Create agent
@@ -201,6 +207,7 @@ async def chat_completions(
                 },
                 trace_id=trace_context.get("trace_id"),
                 span_id=trace_context.get("span_id"),
+                metadata=context.get_session_metadata(),
             )
 
         return ChatCompletionResponse(

@@ -1661,6 +1661,18 @@ wheels = [
 ]
 
 [[package]]
+name = "json-schema-to-pydantic"
+version = "0.4.6"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "pydantic" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/56/39/e7d190da630be2721841e8846a151a6baf2ad3415e105d3e09e711382675/json_schema_to_pydantic-0.4.6.tar.gz", hash = "sha256:5cbca5b02cb52435f5698981dc050acaf684a757434ec4393b81a402a4a9a08a", size = 47559 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/d4/bf/814ae8ccae6f17b82c404fbcbb959b57cd5f1175ae6786efa5735c54607f/json_schema_to_pydantic-0.4.6-py3-none-any.whl", hash = "sha256:e27faa9b886d3a55a9dfb32f9273efadd15d7400ccea26c82eefe1f3c5c4c944", size = 14075 },
+]
+
+[[package]]
 name = "jsonpath-ng"
 version = "1.7.0"
 source = { registry = "https://pypi.org/simple" }
@@ -2716,6 +2728,7 @@ dependencies = [
     { name = "fastapi" },
     { name = "fastmcp" },
     { name = "httpx" },
+    { name = "json-schema-to-pydantic" },
     { name = "loguru" },
     { name = "mcp" },
     { name = "openinference-instrumentation-pydantic-ai" },
@@ -2761,6 +2774,7 @@ requires-dist = [
     { name = "fastmcp", specifier = ">=2.12.4" },
     { name = "httpx", specifier = ">=0.28.1" },
     { name = "ipython", marker = "extra == 'dev'", specifier = ">=8.31.0" },
+    { name = "json-schema-to-pydantic", specifier = ">=0.4.6" },
     { name = "loguru", specifier = ">=0.7.3" },
     { name = "mcp", specifier = ">=1.16.0" },
     { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.14.0" },
@@ -2802,6 +2816,7 @@ dependencies = [
 ]
 wheels = [
     { url = "https://files.pythonhosted.org/packages/3d/b4/193dac10c6d90665c97cc14445223c674cafa79aff65416e1ab584342f44/percolate_rocks-0.3.2-cp38-abi3-macosx_11_0_arm64.whl", hash = "sha256:88da89da34ea2e2157171729f83a8a6a6edcc2871fc353d15ec2915bd7f3090e", size = 10196843 },
+    { url = "https://files.pythonhosted.org/packages/6c/f1/4a1dc34470e2afafa37520774d49f2a6f159611b283d917d75f2382c3001/percolate_rocks-0.3.2-cp38-abi3-manylinux_2_39_x86_64.whl", hash = "sha256:1b8b9da2a1b684cf276e47d2e246c506adfaba2467d4c3f91ac13da20d59557e", size = 14274189 },
 ]
 
 [[package]]

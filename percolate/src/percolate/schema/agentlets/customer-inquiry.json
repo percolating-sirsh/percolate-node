@@ -1,0 +1,98 @@
+{
+  "title": "CustomerInquiry",
+  "description": "You are a customer inquiry extraction specialist for Percolating Plants, a sustainable plant retailer.\n\nYour job is to:\n1. Classify the customer's intent (what they want)\n2. Extract specific requirements (location, light conditions, care level, budget)\n3. Resolve product references to exact product codes\n4. Determine if the inquiry needs human response\n5. Assess customer sentiment\n\nProcess:\n1. Read the customer message carefully\n2. Use search_knowledge_base to find products by description (query: 'product: low maintenance plant for bright light')\n3. Use lookup_entity to resolve exact product codes (entity_id format: 'product:PP-3045-SM')\n4. Use lookup_entity to find customer history (entity_id format: 'customer:CUST-XXXX' or search by email)\n5. Extract location, light, care level, and budget from natural language\n6. Return structured output with all findings\n\nIMPORTANT Rules:\n- Never invent product codes - always use search/lookup tools\n- Customers cannot create new products\n- Be conservative with confidence scores\n- Set requires_response=true if inquiry needs human attention\n- Entity types in this domain: 'product', 'customer', 'supplier', 'employee'",
+  "version": "1.0.0",
+  "short_name": "customer-inquiry",
+  "fully_qualified_name": "percolating-plants.customer-inquiry.CustomerInquiry",
+  "json_schema_extra": {
+    "tools": [
+      {
+        "mcp_server": "percolate",
+        "tool_name": "search_knowledge_base",
+        "usage": "Search REM memory for entities by query. Use prefixes like 'product:', 'customer:' to filter by type"
+      },
+      {
+        "mcp_server": "percolate",
+        "tool_name": "lookup_entity",
+        "usage": "Look up specific entity by ID (format: 'entity_type:entity_id' e.g., 'product:PP-3045-SM', 'customer:CUST-1001')"
+      }
+    ]
+  },
+  "properties": {
+    "inquiry_type": {
+      "type": "string",
+      "enum": ["product_inquiry", "order_request", "care_question", "availability_check", "general_question"],
+      "description": "Classification of what the customer wants"
+    },
+    "products_mentioned": {
+      "type": "array",
+      "description": "Products mentioned or referenced by the customer",
+      "items": {
+        "type": "object",
+        "properties": {
+          "raw_reference": {
+            "type": "string",
+            "description": "How the customer referred to the product"
+          },
+          "resolved_product_code": {
+            "type": "string",
+            "description": "Resolved product code (PP-XXXX-YY format), null if not found",
+            "pattern": "^PP-\\d{4}-[A-Z]{2}$"
+          },
+          "confidence": {
+            "type": "number",
+            "description": "Confidence in product resolution (0-1)",
+            "minimum": 0,
+            "maximum": 1
+          }
+        },
+        "required": ["raw_reference"]
+      }
+    },
+    "extracted_requirements": {
+      "type": "object",
+      "description": "Customer requirements extracted from the message",
+      "properties": {
+        "location": {
+          "type": "string",
+          "description": "Where plant will go (e.g., 'living room', 'office')"
+        },
+        "light_conditions": {
+          "type": "string",
+          "description": "Described light conditions"
+        },
+        "space_size": {
+          "type": "string",
+          "description": "Space constraints mentioned"
+        },
+        "care_level_preference": {
+          "type": "string",
+          "enum": ["easy", "moderate", "challenging"],
+          "description": "Preferred care difficulty"
+        },
+        "budget_gbp": {
+          "type": "number",
+          "description": "Budget in GBP if mentioned"
+        }
+      }
+    },
+    "sentiment": {
+      "type": "string",
+      "enum": ["positive", "neutral", "negative", "urgent"],
+      "description": "Customer sentiment assessment"
+    },
+    "requires_response": {
+      "type": "boolean",
+      "description": "Whether this inquiry needs human response"
+    },
+    "suggested_products": {
+      "type": "array",
+      "description": "Product codes matching customer requirements",
+      "items": {
+        "type": "string",
+        "pattern": "^PP-\\d{4}-[A-Z]{2}$"
+      }
+    }
+  },
+  "required": ["inquiry_type", "sentiment", "requires_response"]
+}

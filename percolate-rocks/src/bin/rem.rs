@@ -1169,15 +1169,18 @@ fn cmd_ask(db_path: &PathBuf, question: &str, plan: bool) -> anyhow::Result<()> 
         if plan {
             // Show plan only
             println!("Query Plan:");
-            println!("  Intent: {:?}", query_plan.intent);
-            println!("  Query: {}", query_plan.query);
+            println!("  Query Type: {:?}", query_plan.query_type);
+            println!("  Query: {}", query_plan.primary_query.query_string);
             println!("  Confidence: {:.2}", query_plan.confidence);
+            println!("  Execution Mode: {:?}", query_plan.execution_mode);
             println!("  Reasoning: {}", query_plan.reasoning);
             if let Some(explanation) = &query_plan.explanation {
                 println!("  Explanation: {}", explanation);
             }
-            println!("  Requires search: {}", query_plan.requires_search);
-            println!("  Parameters: {}", serde_json::to_string_pretty(&query_plan.parameters)?);
+            println!("  Parameters: {}", serde_json::to_string_pretty(&query_plan.primary_query.parameters)?);
+            if !query_plan.fallback_queries.is_empty() {
+                println!("  Fallback queries: {}", query_plan.fallback_queries.len());
+            }
             if !query_plan.next_steps.is_empty() {
                 println!("  Next steps:");
                 for step in &query_plan.next_steps {
@@ -1188,13 +1191,13 @@ fn cmd_ask(db_path: &PathBuf, question: &str, plan: bool) -> anyhow::Result<()> 
         }
 
         // Execute query
-        println!("Executing query: {}", query_plan.query);
+        println!("Executing query: {}", query_plan.primary_query.query_string);
         println!();
 
         // Detect query type and execute
         use percolate_rocks::query::{parse_extended_query, ExtendedQuery};
 
-        match parse_extended_query(&query_plan.query) {
+        match parse_extended_query(&query_plan.primary_query.query_string) {
             Ok(ExtendedQuery::KeyLookup(lookup)) => {
                 // Execute key lookup
                 for key in &lookup.keys {

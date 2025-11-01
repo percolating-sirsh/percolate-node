@@ -512,9 +512,18 @@ rem ask "Who authored this document?" --context doc-uuid
 rem ask "Find Python tutorials" --plan
 ```
 
-## Further Reading
+## See Also
 
-- [Query Planner](../src/llm/planner.rs) - LLM-powered query generation
-- [Extended Parser](../src/query/extended.rs) - Syntax implementation
-- [SQL Executor](../src/query/executor.rs) - Query execution engine
-- [HNSW Index](../src/index/hnsw.rs) - Vector search implementation
+### Query Engine Documentation
+
+- **[QUERY_LLM_QUICKSTART.md](QUERY_LLM_QUICKSTART.md)** - Configure LLM providers for query planning
+- **[query-translation-architecture.md](query-translation-architecture.md)** - How natural language queries are processed
+- **[iterated-retrieval.md](iterated-retrieval.md)** - Multi-stage query execution strategies
+- **[advanced-search.md](advanced-search.md)** - Vector search performance and implementation
+
+### Implementation Reference
+
+- [Query Planner](../../src/llm/query_builder.rs) - Rust LLM query planner with strict JSON schema
+- [SQL Parser](../../src/query/parser.rs) - REM SQL parser implementation
+- [Query Executor](../../src/query/executor.rs) - Query execution engine
+- [HNSW Index](../../src/index/hnsw.rs) - Vector search implementation

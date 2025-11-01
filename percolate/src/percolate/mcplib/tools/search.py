@@ -10,63 +10,92 @@ async def search_knowledge_base(
     query: str,
     tenant_id: str,
     limit: int = 10,
-    include_embeddings: bool = False,
+    schema: str = "resources",
 ) -> dict[str, Any]:
-    """Search REM memory for relevant information.
+    """Search REM memory for semantically similar entities.
 
-    Performs hybrid search across Resources, Entities, and Moments:
-    - Vector search for semantic similarity
-    - Fuzzy search for entity name matching
-    - Graph traversal for relationship discovery
+    Performs vector similarity search using HNSW index over entity embeddings.
+    The search targets a specific schema/table (default: "resources" for documents).
+
+    How it works:
+    1. Generates embedding for the query using the schema's embedding provider
+    2. Searches HNSW index for nearest neighbors
+    3. Returns entities ranked by cosine similarity
 
     Args:
-        query: Search query string
+        query: Natural language search query
         tenant_id: Tenant identifier for data scoping
-        limit: Maximum results to return
-        include_embeddings: Whether to include embedding vectors
+        limit: Maximum number of results to return (default: 10)
+        schema: Schema/table to search (default: "resources" for testing).
+               Only schemas with embedding_fields configured can be searched.
 
     Returns:
-        Search results with resources, entities, and moments
+        Dictionary with:
+        - query: Echo of the search query
+        - tenant_id: Echo of the tenant ID
+        - results: List of dicts with "entity" (full entity data) and "score" (similarity 0-1)
+        - total: Number of results returned
 
     Example:
         >>> results = await search_knowledge_base(
-        ...     query="What is percolate?",
-        ...     tenant_id="tenant-123"
+        ...     query="low maintenance plants for apartments",
+        ...     tenant_id="percolating-plants",
+        ...     limit=5
         ... )
-        >>> len(results["resources"])
-        5
+        >>> results["results"][0]["entity"]["name"]
+        'Snake Plant'
+        >>> results["results"][0]["score"]
+        0.89
+
+    Notes:
+        - Returns empty results if database unavailable (graceful degradation)
+        - Schema must have embedding_fields configured or search will fail
+        - Default schema "resources" is suitable for document/content search
+        - For entity search (products, customers), specify the entity schema name
     """
-    db = get_database()
+    db = get_database(tenant_id=tenant_id)
 
     if not db:
         logger.warning("REM database unavailable - returning empty results")
         return {
             "query": query,
             "tenant_id": tenant_id,
+            "schema": schema,
             "results": [],
             "total": 0,
-            "note": "REM database unavailable (percolate-rocks not installed or not working)",
+            "error": "REM database unavailable (percolate-rocks not installed or initialized)",
         }
 
     try:
-        # Note: rem search is not implemented in v0.2.0
-        # When it's ready, use: results = db.search(query, schema="resources", top_k=limit)
-        # For now, try using export if data exists
-        logger.debug(f"Search not yet implemented - query: {query}")
+        # Call Rust HNSW vector search (fully implemented)
+        # Returns list of (entity_dict, score) tuples
+        raw_results = db.search(query=query, schema=schema, top_k=limit)
+
+        # Convert from tuples to structured dicts for JSON serialization
+        results = [
+            {
+                "entity": entity_dict,  # Full entity with properties
+                "score": float(score),  # Similarity score (0.0 to 1.0)
+            }
+            for entity_dict, score in raw_results
+        ]
+
+        logger.debug(f"Search returned {len(results)} results for query: {query[:50]}")
 
         return {
             "query": query,
             "tenant_id": tenant_id,
-            "results": [],
-            "total": 0,
-            "note": "Search not yet implemented in percolate-rocks v0.2.0 (rem search is TODO)",
+            "schema": schema,
+            "results": results,
+            "total": len(results),
         }
 
     except Exception as e:
-        logger.error(f"Search failed: {e}")
+        logger.error(f"Search failed for query '{query}': {e}")
         return {
             "query": query,
             "tenant_id": tenant_id,
+            "schema": schema,
             "results": [],
             "total": 0,
             "error": str(e),

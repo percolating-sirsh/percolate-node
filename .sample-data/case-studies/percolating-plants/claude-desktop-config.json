@@ -1,0 +1,24 @@
+{
+  "mcpServers": {
+    "percolate-plants": {
+      "command": "uv",
+      "args": [
+        "run",
+        "--directory",
+        "/Users/sirsh/code/percolation/percolate",
+        "percolate",
+        "mcp"
+      ],
+      "env": {
+        "P8_DB_PATH": "/Users/sirsh/.p8/percolating-plants-db",
+        "P8_TENANT_ID": "percolating-plants",
+        "PERCOLATE_OPENAI_API_KEY": "${OPENAI_API_KEY}",
+        "PERCOLATE_ANTHROPIC_API_KEY": "${ANTHROPIC_API_KEY}",
+        "PERCOLATE_CEREBRAS_API_KEY": "${CEREBRAS_API_KEY}",
+        "OPENAI_API_KEY": "${OPENAI_API_KEY}",
+        "ANTHROPIC_API_KEY": "${ANTHROPIC_API_KEY}",
+        "CEREBRAS_API_KEY": "${CEREBRAS_API_KEY}"
+      }
+    }
+  }
+}

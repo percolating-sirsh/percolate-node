@@ -12,7 +12,7 @@ pub mod error;
 pub mod result;
 pub mod uuid_gen;
 
-pub use entity::{Entity, Edge, EdgeData, SystemFields};
+pub use entity::{Entity, Edge, EdgeData, SystemFields, InlineEdge};
 pub use error::DatabaseError;
 pub use result::Result;
 pub use uuid_gen::generate_uuid;

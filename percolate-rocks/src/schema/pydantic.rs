@@ -127,6 +127,48 @@ impl PydanticSchemaParser {
             .map(String::from)
     }
 
+    /// Extract edge storage mode from schema.
+    ///
+    /// # Arguments
+    ///
+    /// * `schema` - Pydantic JSON Schema
+    ///
+    /// # Returns
+    ///
+    /// Edge storage mode: `"inline"` (default) or `"indexed"`
+    ///
+    /// # Edge Storage Modes
+    ///
+    /// **Inline mode (default):**
+    /// - Edges stored in entity's `edges` array as JSON
+    /// - Simple to understand, good for small graphs
+    /// - Retrieval requires key lookups for neighbors
+    /// - Configured: `"edge_storage_mode": "inline"`
+    ///
+    /// **Indexed mode:**
+    /// - Edges stored in separate RocksDB column families
+    /// - Better performance for large graphs
+    /// - Bidirectional traversal support
+    /// - Configured: `"edge_storage_mode": "indexed"`
+    ///
+    /// # Example
+    ///
+    /// ```python
+    /// model_config = ConfigDict(
+    ///     json_schema_extra={
+    ///         "edge_storage_mode": "inline"  # or "indexed"
+    ///     }
+    /// )
+    /// ```
+    pub fn extract_edge_storage_mode(schema: &serde_json::Value) -> String {
+        schema
+            .get("json_schema_extra")
+            .and_then(|extra| extra.get("edge_storage_mode"))
+            .and_then(|v| v.as_str())
+            .map(String::from)
+            .unwrap_or_else(|| "inline".to_string())  // Default to inline
+    }
+
     /// Extract MCP tools from agent-let schema.
     ///
     /// # Arguments

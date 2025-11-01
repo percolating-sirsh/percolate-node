@@ -57,6 +57,97 @@ rem dream --lookback-hours 24
 
 See [`.spikes/percolate-rocks/README.md`](.spikes/percolate-rocks/README.md) for full documentation.
 
+## Development Workflow
+
+When developing locally, you'll want to use your local builds instead of PyPI packages. Here are the recommended approaches:
+
+### Method 1: UV Project Command (Recommended)
+
+Use UV's project-aware execution to automatically manage dependencies:
+
+```bash
+# Build percolate-rocks from source
+cd percolate-rocks
+uv run --project . maturin develop --release
+
+# Run percolate with local percolate-rocks
+cd ../percolate
+uv run percolate --help
+uv run p8 rem schema-list
+```
+
+**How it works:** UV installs `percolate-rocks` into the virtual environment from your local build, then runs `percolate` commands using that environment.
+
+### Method 2: Editable Installs
+
+Install both packages in editable/development mode:
+
+```bash
+# First: Build and install percolate-rocks
+cd percolate-rocks
+maturin develop --release  # Installs into active venv
+
+# Then: Install percolate in editable mode
+cd ../percolate
+uv pip install -e .  # Uses already-installed percolate-rocks
+
+# Now run commands
+percolate --help
+p8 rem schema-list
+```
+
+**How it works:** Since `percolate-rocks` is already in the environment, pip won't download it from PyPI. Changes to Python code are immediately reflected without reinstall.
+
+### Method 3: UV Workspace (Future)
+
+We plan to configure a UV workspace for automatic linking:
+
+```toml
+# uv.toml (at repo root) - Not yet configured
+[workspace]
+members = [
+    "percolate",
+    "percolate-rocks",
+]
+```
+
+Once configured, UV will automatically link local packages without manual builds.
+
+### Recommended Daily Workflow
+
+**Terminal 1** - Rebuild Rust when changed:
+```bash
+cd percolate-rocks
+maturin develop --release  # Rerun when Rust code changes
+```
+
+**Terminal 2** - Use percolate commands:
+```bash
+cd percolate
+uv run p8 --help
+uv run p8 rem init --path ./test_db
+```
+
+### Verify Local Build
+
+Check that you're using the local build (not PyPI):
+
+```bash
+uv run python -c "import percolate_rocks; print(percolate_rocks.__file__)"
+# Should show path in .venv, not site-packages
+```
+
+### Force Reinstall
+
+If you suspect a PyPI version is being used:
+
+```bash
+cd percolate
+uv pip uninstall percolate-rocks  # Remove any PyPI version
+cd ../percolate-rocks
+maturin develop --release          # Install local build
+```
+
 ## System Overview
 
 ```mermaid

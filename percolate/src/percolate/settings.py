@@ -130,8 +130,18 @@ class Settings(BaseSettings):
     default_model: str = Field(
         default="anthropic:claude-3-5-sonnet-20241022", description="Default LLM model"
     )
+    query_model: str | None = Field(
+        default=None,
+        description="Override model for query planning (e.g., cerebras:qwen-3-32b for fast structured output). "
+        "If not set, uses default_model.",
+    )
     anthropic_api_key: str | None = Field(default=None, description="Anthropic API key")
     openai_api_key: str | None = Field(default=None, description="OpenAI API key")
+    cerebras_api_key: str | None = Field(
+        default=None,
+        description="Cerebras API key (get free key at https://cloud.cerebras.ai). "
+        "Ultra-fast inference: qwen-3-32b (32B, 2400 tok/s), llama-3.3-70b (70B, 1400+ tok/s)",
+    )
 
     # Project name (for OpenInference)
     project_name: str = Field(
@@ -150,6 +160,12 @@ class Settings(BaseSettings):
     # MCP
     mcp_enabled: bool = Field(default=True, description="Enable MCP server")
 
+    # Session logging
+    session_logging_enabled: bool = Field(
+        default=True,
+        description="Enable automatic session logging for agent executions (saves messages to REM database)"
+    )
+
     # Percolate-Reading integration
     percolate_reading_url: str = Field(
         default="http://localhost:8001", description="Percolate-Reading API URL"
@@ -163,14 +179,33 @@ class Settings(BaseSettings):
         """Sync API keys to environment variables for Pydantic AI providers.
 
         Pydantic AI providers read directly from environment variables
-        (ANTHROPIC_API_KEY, OPENAI_API_KEY) rather than from settings.
+        (ANTHROPIC_API_KEY, OPENAI_API_KEY, CEREBRAS_API_KEY) rather than from settings.
         This validator ensures keys are available in the environment.
         """
         if self.anthropic_api_key and not os.environ.get("ANTHROPIC_API_KEY"):
             os.environ["ANTHROPIC_API_KEY"] = self.anthropic_api_key
         if self.openai_api_key and not os.environ.get("OPENAI_API_KEY"):
             os.environ["OPENAI_API_KEY"] = self.openai_api_key
+        if self.cerebras_api_key and not os.environ.get("CEREBRAS_API_KEY"):
+            os.environ["CEREBRAS_API_KEY"] = self.cerebras_api_key
         return self
+
+    def get_query_model(self) -> str:
+        """Get the model to use for query planning.
+
+        Returns query_model if set, otherwise falls back to default_model.
+
+        Examples:
+            >>> settings.query_model = "cerebras:qwen-3-32b"
+            >>> settings.get_query_model()
+            "cerebras:qwen-3-32b"
+
+            >>> settings.query_model = None
+            >>> settings.default_model = "anthropic:claude-3-5-sonnet-20241022"
+            >>> settings.get_query_model()
+            "anthropic:claude-3-5-sonnet-20241022"
+        """
+        return self.query_model or self.default_model
 
 
 settings = Settings()

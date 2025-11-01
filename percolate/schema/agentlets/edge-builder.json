@@ -1,0 +1,57 @@
+{
+  "name": "edge-builder",
+  "version": "1.0.0",
+  "description": "Extract relationship edges from document content to build knowledge graph connections. Analyzes resources and identifies relationships to other entities, generating inline edges.\n\n**Process:**\n1. Analyze document content for entity mentions\n2. Identify relationship types (references, authored_by, depends_on)\n3. Optionally lookup existing entities using lookup_entity\n4. Generate inline edges in standard format\n\n**Common Relationship Types:**\n- references: Document references another document\n- authored_by: Document created by person/system\n- depends_on: Technical dependency\n- implements: Implementation of specification\n- related_to: Generic relationship",
+  "target": "pydantic_ai",
+  "type": "object",
+  "properties": {
+    "edges": {
+      "type": "array",
+      "description": "Array of inline edges extracted from the document",
+      "items": {
+        "type": "object",
+        "properties": {
+          "dst": {
+            "type": "string",
+            "description": "Destination entity UUID",
+            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+          },
+          "rel_type": {
+            "type": "string",
+            "description": "Relationship type",
+            "enum": ["references", "authored_by", "depends_on", "implements", "extends", "supersedes", "related_to", "part_of", "mentions", "cites", "derived_from"]
+          },
+          "properties": {
+            "type": "object",
+            "description": "Edge metadata",
+            "properties": {
+              "confidence": {"type": "number", "minimum": 0, "maximum": 1},
+              "context": {"type": "string"}
+            },
+            "additionalProperties": true
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "ISO 8601 timestamp"
+          }
+        },
+        "required": ["dst", "rel_type", "created_at"]
+      }
+    },
+    "summary": {
+      "type": "object",
+      "description": "Summary of extraction results",
+      "properties": {
+        "total_edges": {"type": "integer"},
+        "relationship_types": {"type": "array", "items": {"type": "string"}},
+        "avg_confidence": {"type": "number", "minimum": 0, "maximum": 1}
+      },
+      "required": ["total_edges", "relationship_types", "avg_confidence"]
+    }
+  },
+  "required": ["edges", "summary"],
+  "json_schema_extra": {
+    "tools": []
+  }
+}

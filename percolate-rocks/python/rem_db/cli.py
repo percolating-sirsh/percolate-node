@@ -26,9 +26,13 @@ def get_db_path() -> Path:
 def get_database():
     """Get database instance with default tenant."""
     from rem_db import Database
-    path = get_db_path()
-    tenant_id = os.environ.get("P8_TENANT_ID", "default")
-    return Database(str(path), tenant_id)
+    # Database() uses P8_DB_PATH and P8_TENANT_ID from environment
+    # Set them if not already set
+    if "P8_DB_PATH" not in os.environ:
+        os.environ["P8_DB_PATH"] = str(get_db_path())
+    if "P8_TENANT_ID" not in os.environ:
+        os.environ["P8_TENANT_ID"] = "default"
+    return Database()
 
 
 @app.command()
@@ -172,12 +176,17 @@ def insert(
 def ingest(
     file_path: Annotated[Path, typer.Argument(help="Document file path")],
     schema: Annotated[str, typer.Option("--schema", help="Target schema name")] = "resources",
+    rem: Annotated[bool, typer.Option("--rem", help="Extract REM edges after ingestion")] = False,
 ):
     """Upload and chunk document file.
 
-    Example:
+    Use --rem flag to extract relationship edges from content using LLM.
+    This builds the knowledge graph by identifying entity relationships.
+
+    Examples:
         rem ingest tutorial.txt --schema=articles
-        rem ingest document.txt --schema=resources
+        rem ingest document.txt --schema=resources --rem
+        rem ingest architecture.md --rem  # Extract edges for knowledge graph
     """
     try:
         if not file_path.exists():
@@ -185,16 +194,157 @@ def ingest(
             raise typer.Exit(1)
 
         db = get_database()
+
+        # Extract edges BEFORE chunking if --rem flag is set
+        document_edges = []
+        if rem:
+            # Check for API keys
+            if not os.environ.get("OPENAI_API_KEY") and not os.environ.get("ANTHROPIC_API_KEY"):
+                console.print(f"[yellow]⚠[/yellow] No API key found. Set OPENAI_API_KEY or ANTHROPIC_API_KEY.")
+                console.print(f"[yellow]⚠[/yellow] Skipping edge extraction.")
+                rem = False  # Disable edge extraction
+            else:
+                console.print(f"[cyan]→[/cyan] Extracting edges from document...")
+
+                # Read full document
+                with open(file_path, 'r') as f:
+                    full_content = f.read()
+
+                # Extract edges from full document (not chunks!)
+                try:
+                    edge_plan = db.extract_edges(full_content, str(file_path.name))
+                    document_edges = edge_plan.get("edges", [])
+
+                    if document_edges:
+                        console.print(f"[green]✓[/green] Extracted {len(document_edges)} edges from document")
+                        # Show first few edges
+                        for i, edge in enumerate(document_edges[:3], 1):
+                            console.print(f"  {i}. {edge.get('rel_type')} → {edge.get('dst', '')[:8]}...")
+                        if len(document_edges) > 3:
+                            console.print(f"  ... and {len(document_edges) - 3} more")
+                    else:
+                        console.print(f"[dim]No edges found in document[/dim]")
+                except Exception as e:
+                    console.print(f"[red]✗[/red] Edge extraction failed: {e}")
+                    console.print(f"[yellow]Proceeding with ingestion without edges...[/yellow]")
+
+        # Ingest and chunk the document
         uuids = db.ingest(str(file_path), schema)
 
-        console.print(f"[green]✓[/green] Ingested {file_path}: {len(uuids)} chunks created")
+        console.print(f"\n[green]✓[/green] Ingested {file_path}: {len(uuids)} chunks created")
         if uuids and len(uuids) <= 5:
             for uuid_str in uuids:
                 console.print(f"  - {uuid_str}")
         elif uuids:
             console.print(f"  - {uuids[0]} ... and {len(uuids) - 1} more")
+
+        # Apply document-level edges to all chunks
+        if rem and document_edges and uuids:
+            console.print(f"\n[cyan]→[/cyan] Applying edges to all {len(uuids)} chunks...")
+
+            for uuid_str in uuids:
+                chunk = db.get(uuid_str)
+                if chunk:
+                    # Add document-level edges to chunk
+                    chunk["edges"] = document_edges
+                    db.insert(schema, chunk)
+
+            console.print(f"[green]✓[/green] Applied {len(document_edges)} edges to all chunks")
     except Exception as e:
         console.print(f"[red]✗[/red] Ingest failed: {e}")
+        raise typer.Exit(1)
+
+
+@app.command()
+def index(
+    schema: Annotated[str, typer.Option("--schema", help="Schema to index")] = "resources",
+    limit: Annotated[Optional[int], typer.Option("--limit", help="Max entities to process")] = None,
+    force: Annotated[bool, typer.Option("--force", help="Re-index entities with existing edges")] = False,
+):
+    """Extract REM edges from existing resources (post-processing).
+
+    Reads existing entities from the database and extracts relationship edges
+    using LLM analysis. This is useful for building the knowledge graph after
+    documents have already been ingested.
+
+    Examples:
+        rem index --schema=resources --limit=10
+        rem index --schema=articles --force  # Re-index all, including those with edges
+        rem index --limit=5  # Index first 5 resources
+    """
+    try:
+        # Check for API keys
+        if not os.environ.get("OPENAI_API_KEY") and not os.environ.get("ANTHROPIC_API_KEY"):
+            console.print(f"[red]✗[/red] No API key found. Set OPENAI_API_KEY or ANTHROPIC_API_KEY.")
+            raise typer.Exit(1)
+
+        db = get_database()
+
+        console.print(f"[cyan]→[/cyan] Loading entities from '{schema}' table...")
+
+        # List entities from schema
+        entities = db.list(schema, False, limit)
+
+        if not entities:
+            console.print(f"[yellow]No entities found in '{schema}' table[/yellow]")
+            return
+
+        console.print(f"[green]✓[/green] Found {len(entities)} entities")
+        console.print(f"\n[cyan]→[/cyan] Extracting REM edges...")
+
+        total_edges = 0
+        processed = 0
+        skipped = 0
+
+        for i, entity in enumerate(entities, 1):
+            entity_id = entity.get("id")
+            existing_edges = entity.get("edges", [])
+
+            # Skip if already has edges (unless --force)
+            if existing_edges and not force:
+                console.print(f"[dim]  Entity {i}/{len(entities)}: Skipped (already has {len(existing_edges)} edges)[/dim]")
+                skipped += 1
+                continue
+
+            # Get content
+            content = entity.get("properties", {}).get("content", "")
+            if not content or len(content.strip()) < 50:
+                console.print(f"[dim]  Entity {i}/{len(entities)}: Skipped (no content or too short)[/dim]")
+                skipped += 1
+                continue
+
+            # Extract edges
+            try:
+                # Build context from entity metadata
+                name = entity.get("properties", {}).get("name", "")
+                uri = entity.get("properties", {}).get("uri", "")
+                context = name or uri or f"Entity {entity_id[:8]}"
+
+                edge_plan = db.extract_edges(content, context)
+
+                edges = edge_plan.get("edges", [])
+                if edges:
+                    # Append edges to entity
+                    entity["edges"] = existing_edges + edges
+
+                    # Update entity (upsert with edge merging)
+                    db.insert(schema, entity)
+
+                    total_edges += len(edges)
+                    processed += 1
+                    console.print(f"[green]✓[/green] Entity {i}/{len(entities)}: {len(edges)} edges extracted")
+                else:
+                    console.print(f"[dim]  Entity {i}/{len(entities)}: No edges found[/dim]")
+                    processed += 1
+            except Exception as e:
+                console.print(f"[red]✗[/red] Entity {i}/{len(entities)}: Edge extraction failed: {e}")
+
+        console.print(f"\n[green]✓[/green] REM indexing complete:")
+        console.print(f"  - Processed: {processed} entities")
+        console.print(f"  - Skipped: {skipped} entities")
+        console.print(f"  - Total edges: {total_edges}")
+    except Exception as e:
+        console.print(f"[red]✗[/red] Indexing failed: {e}")
         raise typer.Exit(1)
 
 

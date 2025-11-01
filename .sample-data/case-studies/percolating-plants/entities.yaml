@@ -1,0 +1,413 @@
+products:
+  - product_code: "PP-1001-SM"
+    name: "Monstera Deliciosa"
+    category: "Indoor - Statement"
+    price_gbp: 45.00
+    supplier_id: "SUP-001"
+    stock_level: 34
+    size: "Medium (60-80cm)"
+    care_level: "Easy"
+    light_requirement: "Bright indirect"
+
+  - product_code: "PP-1002-LG"
+    name: "Fiddle Leaf Fig"
+    category: "Indoor - Statement"
+    price_gbp: 89.00
+    supplier_id: "SUP-002"
+    stock_level: 12
+    size: "Large (120-150cm)"
+    care_level: "Moderate"
+    light_requirement: "Bright indirect"
+
+  - product_code: "PP-2015-SM"
+    name: "Snake Plant (Sansevieria)"
+    category: "Indoor - Low Maintenance"
+    price_gbp: 28.00
+    supplier_id: "SUP-001"
+    stock_level: 67
+    size: "Small (30-40cm)"
+    care_level: "Easy"
+    light_requirement: "Low to bright"
+
+  - product_code: "PP-2034-XS"
+    name: "Succulent Collection (Set of 6)"
+    category: "Indoor - Low Maintenance"
+    price_gbp: 35.00
+    supplier_id: "SUP-004"
+    stock_level: 45
+    size: "Extra Small (8cm pots)"
+    care_level: "Easy"
+    light_requirement: "Bright direct"
+
+  - product_code: "PP-3021-MD"
+    name: "Calathea Orbifolia"
+    category: "Indoor - Specialty"
+    price_gbp: 52.00
+    supplier_id: "SUP-005"
+    stock_level: 18
+    size: "Medium (50-60cm)"
+    care_level: "Challenging"
+    light_requirement: "Bright indirect"
+
+  - product_code: "PP-3045-SM"
+    name: "Philodendron Pink Princess"
+    category: "Indoor - Rare"
+    price_gbp: 125.00
+    supplier_id: "SUP-003"
+    stock_level: 6
+    size: "Small (30-40cm)"
+    care_level: "Moderate"
+    light_requirement: "Bright indirect"
+
+  - product_code: "PP-4001-MD"
+    name: "Lavender Angustifolia"
+    category: "Outdoor - Perennial"
+    price_gbp: 18.00
+    supplier_id: "SUP-006"
+    stock_level: 89
+    size: "Medium (25cm pot)"
+    care_level: "Easy"
+    light_requirement: "Full sun"
+
+  - product_code: "PP-4012-LG"
+    name: "Japanese Maple (Acer)"
+    category: "Outdoor - Ornamental Tree"
+    price_gbp: 145.00
+    supplier_id: "SUP-007"
+    stock_level: 8
+    size: "Large (100cm)"
+    care_level: "Moderate"
+    light_requirement: "Partial shade"
+
+  - product_code: "PP-5008-AC"
+    name: "Organic Plant Food (1L)"
+    category: "Accessories - Care"
+    price_gbp: 12.50
+    supplier_id: "SUP-008"
+    stock_level: 156
+    size: "1 litre bottle"
+    care_level: "N/A"
+    light_requirement: "N/A"
+
+  - product_code: "PP-5023-AC"
+    name: "Terracotta Pot Set (3 sizes)"
+    category: "Accessories - Pots"
+    price_gbp: 42.00
+    supplier_id: "SUP-009"
+    stock_level: 34
+    size: "Set: 15cm, 20cm, 25cm"
+    care_level: "N/A"
+    light_requirement: "N/A"
+
+suppliers:
+  - supplier_id: "SUP-001"
+    name: "Greenfield Nurseries Ltd"
+    location: "Maidstone, Kent"
+    contact_person: "Sarah Greenfield"
+    email: "sarah@greenfield-nurseries.co.uk"
+    phone: "+44 1622 456789"
+    specialty: "Indoor foliage plants"
+    payment_terms: "Net 30"
+    certification: "Organic Soil Association"
+
+  - supplier_id: "SUP-002"
+    name: "Heritage Plants & Trees"
+    location: "Exeter, Devon"
+    contact_person: "James Hartley"
+    email: "j.hartley@heritageplants.co.uk"
+    phone: "+44 1392 234567"
+    specialty: "Statement indoor plants"
+    payment_terms: "Net 30"
+    certification: "HTA Member"
+
+  - supplier_id: "SUP-003"
+    name: "Rare Botanicals Europe"
+    location: "Amsterdam, Netherlands"
+    contact_person: "Daan van Bergen"
+    email: "daan@rarebotanicals.nl"
+    phone: "+31 20 555 1234"
+    specialty: "Rare and variegated varieties"
+    payment_terms: "Payment in advance"
+    certification: "EU Organic"
+
+  - supplier_id: "SUP-004"
+    name: "Desert Dreams Cacti"
+    location: "Brighton, East Sussex"
+    contact_person: "Melissa Croft"
+    email: "mel@desertdreams.co.uk"
+    phone: "+44 1273 987654"
+    specialty: "Succulents and cacti"
+    payment_terms: "Net 30"
+    certification: "Peat-free certified"
+
+  - supplier_id: "SUP-005"
+    name: "Tropical House Growers"
+    location: "St Austell, Cornwall"
+    contact_person: "Peter Cardinale"
+    email: "peter@tropicalhousegrowers.co.uk"
+    phone: "+44 1726 345678"
+    specialty: "Tropical and humidity-loving plants"
+    payment_terms: "Net 45"
+    certification: "Eden Project Partner"
+
+  - supplier_id: "SUP-006"
+    name: "English Garden Perennials"
+    location: "Cirencester, Gloucestershire"
+    contact_person: "Victoria Pemberton"
+    email: "v.pemberton@englishgarden.co.uk"
+    phone: "+44 1285 765432"
+    specialty: "Hardy perennials and herbs"
+    payment_terms: "Net 30"
+    certification: "RHS Partner"
+
+  - supplier_id: "SUP-007"
+    name: "Shipton Japanese Gardens"
+    location: "Henley-on-Thames, Oxfordshire"
+    contact_person: "Takeshi Nakamura"
+    email: "t.nakamura@shiptongardens.co.uk"
+    phone: "+44 1491 456123"
+    specialty: "Japanese maples and ornamental trees"
+    payment_terms: "Net 30"
+    certification: "Japanese Maple Society"
+
+  - supplier_id: "SUP-008"
+    name: "BioGrow Solutions UK"
+    location: "Reading, Berkshire"
+    contact_person: "Amanda Foster"
+    email: "amanda@biogrow-uk.com"
+    phone: "+44 118 234 5678"
+    specialty: "Organic plant care products"
+    payment_terms: "Net 60"
+    certification: "Organic Farmers & Growers"
+
+  - supplier_id: "SUP-009"
+    name: "Artisan Ceramics & Pots"
+    location: "Stoke-on-Trent, Staffordshire"
+    contact_person: "Robert Chen"
+    email: "rob@artisanpots.co.uk"
+    phone: "+44 1782 567890"
+    specialty: "Handcrafted terracotta and ceramic pots"
+    payment_terms: "Net 30"
+    certification: "Made in Britain"
+
+  - supplier_id: "SUP-010"
+    name: "EcoPackaging Innovators"
+    location: "Bristol"
+    contact_person: "Lucy Martinez"
+    email: "lucy@ecopackaging.co.uk"
+    phone: "+44 117 987 6543"
+    specialty: "Sustainable packaging materials"
+    payment_terms: "Net 30"
+    certification: "FSC Certified"
+
+customers:
+  - customer_id: "CUST-1001"
+    name: "Sophie Henderson"
+    email: "sophie.henderson@gmail.com"
+    phone: "+44 7700 123456"
+    address: "42 Albion Road, Stoke Newington, London N16 9JT"
+    customer_type: "Retail"
+    first_purchase: "2022-03-15"
+    total_orders: 8
+    lifetime_value_gbp: 456.00
+    preferred_category: "Indoor - Statement"
+
+  - customer_id: "CUST-1002"
+    name: "David Okonkwo"
+    email: "d.okonkwo@hotmail.co.uk"
+    phone: "+44 7711 234567"
+    address: "Flat 3B, 88 Caledonian Road, Islington, London N1 9DN"
+    customer_type: "Retail"
+    first_purchase: "2023-01-22"
+    total_orders: 3
+    lifetime_value_gbp: 167.00
+    preferred_category: "Indoor - Low Maintenance"
+
+  - customer_id: "CUST-1003"
+    name: "Emma Lawson"
+    email: "emma.lawson@icloud.com"
+    phone: "+44 7722 345678"
+    address: "15 Richmond Hill, Richmond, London TW10 6RE"
+    customer_type: "Retail"
+    first_purchase: "2021-07-08"
+    total_orders: 15
+    lifetime_value_gbp: 1243.00
+    preferred_category: "Outdoor - Perennial"
+
+  - customer_id: "CUST-1004"
+    name: "James Park"
+    email: "j.park@yahoo.com"
+    phone: "+44 7733 456789"
+    address: "29 Greenwich Market, London SE10 9HZ"
+    customer_type: "Retail"
+    first_purchase: "2023-05-14"
+    total_orders: 2
+    lifetime_value_gbp: 89.00
+    preferred_category: "Indoor - Rare"
+
+  - customer_id: "CUST-2001"
+    name: "The Hoxton Hotel - Shoreditch"
+    email: "procurement@thehoxton.com"
+    phone: "+44 20 7550 1000"
+    address: "81 Great Eastern Street, London EC2A 3HU"
+    customer_type: "Commercial"
+    first_purchase: "2020-09-03"
+    total_orders: 24
+    lifetime_value_gbp: 8945.00
+    preferred_category: "Corporate Solutions"
+
+  - customer_id: "CUST-2002"
+    name: "WeWork - Moorgate"
+    email: "facilities.moorgate@wework.com"
+    phone: "+44 20 3695 4000"
+    address: "1 Fore Street Avenue, London EC2Y 9DT"
+    customer_type: "Commercial"
+    first_purchase: "2021-02-18"
+    total_orders: 18
+    lifetime_value_gbp: 6720.00
+    preferred_category: "Corporate Solutions"
+
+  - customer_id: "CUST-2003"
+    name: "Dishoom Restaurants Ltd"
+    email: "operations@dishoom.com"
+    phone: "+44 20 7420 9320"
+    address: "12 Upper St Martin's Lane, London WC2H 9FB"
+    customer_type: "Commercial"
+    first_purchase: "2022-11-07"
+    total_orders: 6
+    lifetime_value_gbp: 2340.00
+    preferred_category: "Indoor - Statement"
+
+  - customer_id: "CUST-1005"
+    name: "Priya Sharma"
+    email: "priya.sharma@outlook.com"
+    phone: "+44 7744 567890"
+    address: "104 Columbia Road, Bethnal Green, London E2 7RG"
+    customer_type: "Retail"
+    first_purchase: "2023-08-19"
+    total_orders: 5
+    lifetime_value_gbp: 298.00
+    preferred_category: "Indoor - Specialty"
+
+  - customer_id: "CUST-1006"
+    name: "Oliver Wright"
+    email: "oliver.wright@gmail.com"
+    phone: "+44 7755 678901"
+    address: "67 Lordship Lane, East Dulwich, London SE22 8EP"
+    customer_type: "Retail"
+    first_purchase: "2022-06-30"
+    total_orders: 7
+    lifetime_value_gbp: 534.00
+    preferred_category: "Outdoor - Ornamental Tree"
+
+  - customer_id: "CUST-2004"
+    name: "Berkeley Homes - Show Homes Division"
+    email: "interiors@berkeleyhomes.co.uk"
+    phone: "+44 20 3970 4000"
+    address: "Berkeley House, 19 Portsmouth Road, Cobham KT11 1JG"
+    customer_type: "Commercial"
+    first_purchase: "2020-04-12"
+    total_orders: 32
+    lifetime_value_gbp: 15670.00
+    preferred_category: "Corporate Solutions"
+
+employees:
+  - employee_id: "EMP-001"
+    name: "Elena Vasquez"
+    position: "Co-Founder & Head of Horticulture"
+    email: "elena@percolatingplants.co.uk"
+    phone: "+44 7900 111111"
+    department: "Leadership"
+    location: "Hackney HQ"
+    start_date: "2018-01-15"
+    qualifications: "BSc Botany (UCL), RHS Level 3"
+
+  - employee_id: "EMP-002"
+    name: "Marcus Chen"
+    position: "Co-Founder & CEO"
+    email: "marcus@percolatingplants.co.uk"
+    phone: "+44 7900 222222"
+    department: "Leadership"
+    location: "Hackney HQ"
+    start_date: "2018-01-15"
+    qualifications: "MBA (London Business School)"
+
+  - employee_id: "EMP-003"
+    name: "Aisha Patel"
+    position: "Operations Manager"
+    email: "aisha@percolatingplants.co.uk"
+    phone: "+44 7900 333333"
+    department: "Operations"
+    location: "Hackney HQ"
+    start_date: "2019-03-01"
+    qualifications: "BA Business Management"
+
+  - employee_id: "EMP-004"
+    name: "Tom Bradshaw"
+    position: "Senior Horticulturist"
+    email: "tom@percolatingplants.co.uk"
+    phone: "+44 7900 444444"
+    department: "Horticulture"
+    location: "Hackney HQ"
+    start_date: "2019-06-15"
+    qualifications: "RHS Level 3, City & Guilds"
+
+  - employee_id: "EMP-005"
+    name: "Yuki Tanaka"
+    position: "Islington Store Manager"
+    email: "yuki@percolatingplants.co.uk"
+    phone: "+44 7900 555555"
+    department: "Retail"
+    location: "Islington"
+    start_date: "2019-09-01"
+    qualifications: "RHS Level 2"
+
+  - employee_id: "EMP-006"
+    name: "Raj Mehta"
+    position: "E-commerce Manager"
+    email: "raj@percolatingplants.co.uk"
+    phone: "+44 7900 666666"
+    department: "Digital"
+    location: "Hackney HQ"
+    start_date: "2020-01-20"
+    qualifications: "BSc Computer Science"
+
+  - employee_id: "EMP-007"
+    name: "Charlotte Mills"
+    position: "Customer Care Lead"
+    email: "charlotte@percolatingplants.co.uk"
+    phone: "+44 7900 777777"
+    department: "Customer Service"
+    location: "Hackney HQ"
+    start_date: "2020-05-11"
+    qualifications: "Cert. Customer Service Management"
+
+  - employee_id: "EMP-008"
+    name: "Luis Rodriguez"
+    position: "Logistics Coordinator"
+    email: "luis@percolatingplants.co.uk"
+    phone: "+44 7900 888888"
+    department: "Operations"
+    location: "Hackney HQ"
+    start_date: "2021-02-08"
+    qualifications: "Diploma Supply Chain Management"
+
+  - employee_id: "EMP-009"
+    name: "Freya Johansen"
+    position: "Social Media & Content Manager"
+    email: "freya@percolatingplants.co.uk"
+    phone: "+44 7900 999999"
+    department: "Marketing"
+    location: "Remote"
+    start_date: "2021-08-01"
+    qualifications: "BA Digital Marketing"
+
+  - employee_id: "EMP-010"
+    name: "Ben Taylor"
+    position: "Greenwich Store Manager"
+    email: "ben@percolatingplants.co.uk"
+    phone: "+44 7900 101010"
+    department: "Retail"
+    location: "Greenwich"
+    start_date: "2020-11-15"
+    qualifications: "RHS Level 2, Retail Management Cert."

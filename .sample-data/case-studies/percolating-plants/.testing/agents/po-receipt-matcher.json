@@ -1,0 +1,165 @@
+{
+  "name": "percolating-plants-po-receipt-matcher",
+  "short_name": "po-receipt-matcher",
+  "version": "1.0.0",
+  "description": "You are a purchase order receipt matching specialist for Percolating Plants.\n\nYour job is to:\n1. Extract delivery receipt information from unstructured documents\n2. Find the matching purchase order (PO)\n3. Validate all line items against the PO\n4. Flag any discrepancies (quantity, price, condition)\n5. Determine if employee review is needed\n\nProcess:\n1. Parse the delivery receipt to extract items, quantities, supplier info\n2. Use lookup_entity to identify the supplier (entity_id: 'supplier:SUP-XXX' or search by name)\n3. Use search_knowledge_base to find matching PO by reference number (query: 'purchase_order:PO-YYYY-XXX')\n4. Use lookup_entity to validate product codes exist (entity_id: 'product:PP-XXXX-YY')\n5. Compare receipt line items to PO line items\n6. Calculate discrepancies and severity\n7. Return structured output with match confidence\n\nDiscrepancy Rules:\n- Quantity mismatch >10% = moderate severity\n- Damaged goods = critical severity\n- Missing items = critical severity\n- Extra items with employee approval = minor severity\n- Price differences <5% = minor severity\n\nEmployee Authorization:\n- Only employees can authorize new products\n- Use lookup_entity to verify employee (entity_id: 'employee:EMP-XXX' or search by name)\n- Look for approval text in receipt (e.g., 'Elena approved', 'Marcus authorized')\n- If new product without approval, set requires_employee_review=true\n\nIMPORTANT Rules:\n- Never create products without employee authorization\n- Always validate product codes exist using lookup_entity\n- Set match_confidence based on PO reference clarity\n- Flag for review if match_confidence < 0.7\n- Entity types: 'product', 'supplier', 'employee', 'purchase_order'",
+  "output_schema": {
+    "type": "object",
+    "title": "POReceiptMatch",
+    "properties": {
+      "receipt_id": {
+        "type": "string",
+        "description": "Generated receipt ID (REC-YYYY-XXX)",
+        "pattern": "^REC-\\d{4}-\\d{3}$"
+      },
+      "matched_po_id": {
+        "type": "string",
+        "description": "Matched purchase order ID, null if no match",
+        "pattern": "^PO-\\d{4}-\\d{3}$"
+      },
+      "supplier_id": {
+        "type": "string",
+        "description": "Resolved supplier ID",
+        "pattern": "^SUP-\\d{3}$"
+      },
+      "delivery_date": {
+        "type": "string",
+        "format": "date",
+        "description": "Delivery date from receipt"
+      },
+      "items_delivered": {
+        "type": "array",
+        "description": "Items listed on delivery receipt",
+        "items": {
+          "type": "object",
+          "properties": {
+            "product_code": {
+              "type": "string",
+              "pattern": "^PP-\\d{4}-[A-Z]{2}$"
+            },
+            "quantity_delivered": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "quantity_ordered": {
+              "type": "integer",
+              "description": "Expected quantity from PO, null if no PO match"
+            },
+            "unit_price_gbp": {
+              "type": "number"
+            },
+            "condition": {
+              "type": "string",
+              "enum": ["good", "damaged", "missing"]
+            },
+            "notes": {
+              "type": "string",
+              "description": "Any special notes about this item"
+            }
+          },
+          "required": ["product_code", "quantity_delivered", "condition"]
+        }
+      },
+      "discrepancies": {
+        "type": "array",
+        "description": "List of identified discrepancies",
+        "items": {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "enum": [
+                "quantity_mismatch",
+                "price_difference",
+                "missing_item",
+                "extra_item",
+                "damaged_goods"
+              ]
+            },
+            "product_code": {
+              "type": "string",
+              "pattern": "^PP-\\d{4}-[A-Z]{2}$"
+            },
+            "expected": {
+              "type": "string",
+              "description": "What was expected"
+            },
+            "actual": {
+              "type": "string",
+              "description": "What was received"
+            },
+            "severity": {
+              "type": "string",
+              "enum": ["minor", "moderate", "critical"]
+            }
+          },
+          "required": ["type", "product_code", "expected", "actual", "severity"]
+        }
+      },
+      "match_confidence": {
+        "type": "number",
+        "description": "Confidence in PO match (0-1)",
+        "minimum": 0,
+        "maximum": 1
+      },
+      "status": {
+        "type": "string",
+        "enum": ["matched", "partial_match", "no_match", "needs_review"],
+        "description": "Overall matching status"
+      },
+      "requires_employee_review": {
+        "type": "boolean",
+        "description": "Whether this requires human review"
+      },
+      "new_products_detected": {
+        "type": "array",
+        "description": "New products mentioned (requires employee authorization)",
+        "items": {
+          "type": "object",
+          "properties": {
+            "product_code": {
+              "type": "string"
+            },
+            "name": {
+              "type": "string"
+            },
+            "authorized_by": {
+              "type": "string",
+              "description": "Employee who authorized (e.g., 'Elena', 'EMP-001'), null if no authorization found"
+            }
+          },
+          "required": ["product_code", "name"]
+        }
+      }
+    },
+    "required": [
+      "receipt_id",
+      "supplier_id",
+      "delivery_date",
+      "items_delivered",
+      "discrepancies",
+      "match_confidence",
+      "status",
+      "requires_employee_review"
+    ]
+  },
+  "tools": [
+    {
+      "mcp_server": "percolate",
+      "tool_name": "search_knowledge_base",
+      "usage": "Search REM memory for entities. Use entity type prefixes: 'purchase_order:', 'supplier:', 'product:'"
+    },
+    {
+      "mcp_server": "percolate",
+      "tool_name": "lookup_entity",
+      "usage": "Look up specific entity by ID (format: 'type:id' e.g., 'supplier:SUP-001', 'product:PP-1001-SM', 'employee:EMP-001')"
+    }
+  ],
+  "metadata": {
+    "domain": "supply-chain",
+    "use_case": "order_fulfillment",
+    "tags": ["purchase-order", "delivery-receipt", "reconciliation", "inventory"],
+    "author": "percolating-plants",
+    "created": "2024-11-01"
+  }
+}

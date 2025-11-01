@@ -29,6 +29,7 @@ dependencies = [
     "pydantic>=2.10.5",
     "pydantic-settings>=2.7.1",
     "pydantic-ai>=0.8.1",
+    "json-schema-to-pydantic>=0.4.6",
     # MCP
     "fastmcp>=2.12.4",
     # Authentication & Crypto
@@ -72,6 +73,7 @@ dev = [
 
 [project.scripts]
 percolate = "percolate.cli.main:app"
+p8 = "percolate.cli.main:app"
 
 [project.urls]
 Homepage = "https://github.com/percolation-labs/percolate"
