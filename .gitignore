@@ -52,3 +52,4 @@ logs/
 .spikes/*/target/
 .spikes/*/__pycache__/
 .spikes/archived/  # Don't commit archived spikes
+.archive-docs

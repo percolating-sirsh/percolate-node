@@ -1,0 +1,202 @@
+{
+  "database": "/Users/sirsh/.p8/percolating-plants-db",
+  "tenant": "percolating-plants",
+  "timestamp": "2025-11-01T17:50:00Z",
+  "queries": [
+    {
+      "id": 1,
+      "query": "product PP-1001-SM",
+      "description": "Exact product code lookup",
+      "plan": {
+        "confidence": 1.0,
+        "execution_mode": "single_pass",
+        "fallback_queries": [],
+        "metadata": {
+          "cacheable": true,
+          "estimated_latency_ms": null,
+          "estimated_rows": null
+        },
+        "next_steps": [
+          "validate_results",
+          "process_output"
+        ],
+        "primary_query": {
+          "dialect": "rem_sql",
+          "parameters": {
+            "keys": [
+              "PP-1001-SM"
+            ]
+          },
+          "query_string": "LOOKUP 'PP-1001-SM'"
+        },
+        "query_type": "lookup",
+        "reasoning": "Exact product identifier provided, using key-based lookup for maximum efficiency.",
+        "schema_hints": []
+      },
+      "execution": [],
+      "error": null
+    },
+    {
+      "id": 2,
+      "query": "Monstera Deliciosa",
+      "description": "Product name lookup",
+      "plan": {
+        "confidence": 0.6,
+        "execution_mode": "adaptive",
+        "fallback_queries": [
+          {
+            "confidence": 0.7,
+            "query": {
+              "dialect": "rem_sql",
+              "parameters": {
+                "query_text": "Monstera Deliciosa",
+                "schema": "plants",
+                "top_k": 10
+              },
+              "query_string": "SEARCH 'Monstera Deliciosa' IN plants LIMIT 10"
+            },
+            "reasoning": "If the lookup does not return results, a semantic search in the plants schema may find relevant entries.",
+            "trigger": "no_results"
+          }
+        ],
+        "metadata": {
+          "cacheable": true,
+          "estimated_latency_ms": null,
+          "estimated_rows": null
+        },
+        "next_steps": [
+          "execute primary query",
+          "evaluate results",
+          "execute fallback if necessary"
+        ],
+        "primary_query": {
+          "dialect": "rem_sql",
+          "parameters": {
+            "keys": [
+              "Monstera Deliciosa"
+            ]
+          },
+          "query_string": "LOOKUP 'Monstera Deliciosa'"
+        },
+        "query_type": "lookup",
+        "reasoning": "Starting with a general lookup due to the lack of specific schema, with a fallback to semantic search in a likely relevant schema.",
+        "schema_hints": []
+      },
+      "execution": [],
+      "error": null
+    },
+    {
+      "id": 3,
+      "query": "supplier SUP-001",
+      "description": "Supplier ID lookup",
+      "plan": {
+        "confidence": 1.0,
+        "execution_mode": "single_pass",
+        "fallback_queries": [],
+        "metadata": {
+          "cacheable": true,
+          "estimated_latency_ms": null,
+          "estimated_rows": null
+        },
+        "next_steps": [],
+        "primary_query": {
+          "dialect": "rem_sql",
+          "parameters": {
+            "keys": [
+              "SUP-001"
+            ]
+          },
+          "query_string": "LOOKUP 'SUP-001'"
+        },
+        "query_type": "lookup",
+        "reasoning": "Direct lookup using a specific supplier identifier",
+        "schema_hints": []
+      },
+      "execution": [],
+      "error": null
+    },
+    {
+      "id": 4,
+      "query": "Les Jardins de Provence",
+      "description": "Supplier name lookup",
+      "plan": {
+        "confidence": 0.6,
+        "execution_mode": "adaptive",
+        "fallback_queries": [
+          {
+            "confidence": 0.7,
+            "query": {
+              "dialect": "rem_sql",
+              "parameters": {
+                "query_text": "Les Jardins de Provence",
+                "schema": "places",
+                "top_k": 10
+              },
+              "query_string": "SEARCH 'Les Jardins de Provence' IN schema LIMIT 10"
+            },
+            "reasoning": "If the lookup does not return results, try a semantic search assuming 'Les Jardins de Provence' might be a notable location in a 'places' schema.",
+            "trigger": "no_results"
+          }
+        ],
+        "metadata": {
+          "cacheable": true,
+          "estimated_latency_ms": null,
+          "estimated_rows": null
+        },
+        "next_steps": [
+          "Execute primary query",
+          "Evaluate results",
+          "Fallback if necessary"
+        ],
+        "primary_query": {
+          "dialect": "rem_sql",
+          "parameters": {
+            "keys": [
+              "Les Jardins de Provence"
+            ]
+          },
+          "query_string": "LOOKUP 'Les Jardins de Provence'"
+        },
+        "query_type": "lookup",
+        "reasoning": "Starting with a lookup as it's a general query, potentially a name or key. Fallback to semantic search in case of no results.",
+        "schema_hints": []
+      },
+      "execution": [],
+      "error": null
+    },
+    {
+      "id": 5,
+      "query": "all plants in stock",
+      "description": "SQL query for all plants",
+      "plan": {
+        "confidence": 0.9,
+        "execution_mode": "single_pass",
+        "fallback_queries": [],
+        "metadata": {
+          "cacheable": true,
+          "estimated_latency_ms": null,
+          "estimated_rows": null
+        },
+        "next_steps": [],
+        "primary_query": {
+          "dialect": "rem_sql",
+          "parameters": {
+            "fields": [
+              "*"
+            ],
+            "schema": "resources",
+            "where": {
+              "type": "plant"
+            }
+          },
+          "query_string": "SELECT * FROM resources WHERE type = 'plant'"
+        },
+        "query_type": "sql",
+        "reasoning": "Using SQL to query all plants from the 'resources' schema based on type",
+        "schema_hints": []
+      },
+      "execution": [],
+      "error": null
+    }
+  ]
+}
